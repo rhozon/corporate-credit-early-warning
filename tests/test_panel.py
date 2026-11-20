@@ -54,6 +54,7 @@ def test_cancelled_firm_is_censored_at_cancellation():
     assert p["q"].max() <= pd.Timestamp("2017-05-01")
     assert p.iloc[-1]["censored_reason"] == "cancelled"
     assert p["event"].sum() == 0
+    assert (p["cancel_date"] == pd.Timestamp("2017-05-01")).all()
 
 
 def test_left_truncated_and_excluded_firms_are_out():

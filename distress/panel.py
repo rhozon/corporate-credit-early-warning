@@ -70,6 +70,7 @@ def build_panel(feats: pd.DataFrame, events: pd.DataFrame, cad: pd.DataFrame, ma
                 "t_to_event": _months(q, t_next) if pd.notna(t_next) else np.nan,
                 "prior_event": int(any(e < q for e in ends)),
                 "censored_reason": "",
+                "cancel_date": c,
             })
             row["stop"] = row["start"] + 3
             rows.append(row)
