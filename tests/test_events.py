@@ -84,6 +84,57 @@ def test_two_episodes_separated_by_more_than_a_year_without_filings():
     assert ev["episode_end"].iloc[0] == pd.Timestamp("2016-12-15")
 
 
+def status_classifier(row):
+    s = row["evidence"].lower()
+    if "encerramento" in s:
+        return {"own_filing": False, "event_type": "RJ", "status": "exit"}
+    if "pedido de recuperação extrajudicial" in s:
+        return {"own_filing": True, "event_type": "RE", "status": "filing"}
+    if "pedido de recuperação judicial" in s:
+        return {"own_filing": True, "event_type": "RJ", "status": "filing"}
+    return {"own_filing": False, "event_type": None, "status": "other"}
+
+
+def run(ipe_rows, cad_rows=None):
+    cad = pd.DataFrame(cad_rows or [cad_row(9)])
+    return events.build_events(events.adjudicate(events.candidate_events(cad, pd.DataFrame(ipe_rows)), status_classifier))
+
+
+def test_exit_then_new_filing_within_a_year_is_a_new_episode():
+    rows = [ipe_row(9, "Fato Relevante", "Pedido de Recuperação Judicial", "2016-06-20")]
+    rows += [ipe_row(9, RJ_CAT, "", f"20{y}-{m:02d}-10") for y in (17, 18, 19, 20, 21, 22) for m in (3, 9)]
+    rows += [ipe_row(9, "Fato Relevante", "Encerramento da recuperação judicial", "2022-12-14"),
+             ipe_row(9, "Fato Relevante", "Pedido de Recuperação Judicial", "2023-03-01")]
+    ev = run(rows)
+    assert ev["event_date"].tolist() == [pd.Timestamp("2016-06-20"), pd.Timestamp("2023-03-01")]
+
+
+def test_sparse_monitoring_filings_do_not_open_new_episodes():
+    rows = [ipe_row(9, "Fato Relevante", "Pedido de Recuperação Judicial", "2011-04-06")]
+    rows += [ipe_row(9, RJ_CAT, "", d) for d in ("2013-08-21", "2016-12-06", "2018-08-23")]
+    ev = run(rows)
+    assert len(ev) == 1 and ev["episode_end"].iloc[0] == pd.Timestamp("2018-08-23")
+
+
+def test_extrajudicial_turning_judicial_is_a_new_event():
+    rows = [ipe_row(9, "Fato Relevante", "Pedido de Recuperação Extrajudicial", "2024-04-29"),
+            ipe_row(9, RJ_CAT, "", "2024-09-10"),
+            ipe_row(9, "Fato Relevante", "Pedido de Recuperação Judicial", "2025-02-01")]
+    ev = run(rows)
+    assert ev["event_type"].tolist() == ["RE", "RJ"]
+
+
+def test_liquidation_is_not_a_default_event():
+    ev = run([], [cad_row(9, "LIQUIDAÇÃO EXTRAJUDICIAL", "2024-12-03")])
+    assert ev.empty
+
+
+def test_non_financial_filter_survives_duplicated_registry_rows():
+    cad = pd.DataFrame([cad_row(1), cad_row(1), {**cad_row(2), "sector": "Bancos"}])
+    ev = pd.DataFrame({"cd_cvm": [1, 2], "event_date": pd.to_datetime(["2020-01-01", "2020-01-01"])})
+    assert events.non_financial(ev, cad)["cd_cvm"].tolist() == [1]
+
+
 def test_review_sheet_has_the_columns_rodrigo_fills(tmp_path):
     ev = pd.DataFrame([{"cd_cvm": 1, "name": "ACME SA", "event_date": pd.Timestamp("2024-02-20"),
                         "event_type": "RJ", "evidence": "Pedido de Recuperação Judicial", "link": "http://x",

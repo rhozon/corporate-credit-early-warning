@@ -12,7 +12,6 @@ import pandas as pd
 from . import cvm, events
 from .llm.adjudicate import event_classifier
 from .llm.client import LLM
-from .panel import is_financial
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -34,8 +33,7 @@ def cmd_events(a):
     adj = events.adjudicate(cands, event_classifier(llm()))
     adj.to_csv(DATA / "events_adjudicated.csv", index=False)
     ev = events.build_events(adj)
-    sectors = cad.set_index("cd_cvm")["sector"]
-    ev = ev[~ev["cd_cvm"].map(sectors).map(is_financial)]
+    ev = events.non_financial(ev, cad)
     ev.to_csv(DATA / "events_draft.csv", index=False)
     print(f"events: {len(ev)} in {ev['cd_cvm'].nunique()} firms; in window (2011+): "
           f"{(ev['event_date'] >= events.WINDOW_START).sum()}; left-truncated: {ev['left_truncated'].sum()}")

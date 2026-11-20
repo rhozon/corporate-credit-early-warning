@@ -45,8 +45,14 @@ def status_type(status) -> str | None:
     return None
 
 
+IPE_COLS = ["cd_cvm", "cnpj", "name", "category", "type", "subject", "delivered", "link"]
+ESCALATION = {("RE", "RJ"), ("RE", "FAL")}
+
+
 def candidate_events(cad: pd.DataFrame, ipe: pd.DataFrame) -> pd.DataFrame:
     cols = ["cd_cvm", "name", "source", "date", "evidence", "link", "event_type"]
+    if ipe.empty:
+        ipe = pd.DataFrame(columns=IPE_COLS).astype({"category": str, "subject": str, "type": str})
     reg = cad.assign(event_type=cad["issuer_status"].map(status_type))
     reg = reg[reg["event_type"].notna() & reg["issuer_status_date"].notna()]
     reg = pd.DataFrame({"cd_cvm": reg["cd_cvm"], "name": reg["name"], "source": "registry",
@@ -76,35 +82,80 @@ def adjudicate(candidates: pd.DataFrame, classifier: Callable[[pd.Series], dict]
     """
     out = candidates.copy()
     out["own_filing"] = True
+    out["status"] = out["source"].map({"registry": "filing", "recovery_category": "ongoing"})
     mf = out["source"] == "material_fact"
     for i in out.index[mf]:
         verdict = classifier(out.loc[i])
-        out.at[i, "own_filing"] = bool(verdict.get("own_filing"))
+        own = bool(verdict.get("own_filing"))
+        out.at[i, "own_filing"] = own
+        out.at[i, "status"] = verdict.get("status") or ("filing" if own else "other")
         if verdict.get("event_type"):
             out.at[i, "event_type"] = verdict["event_type"]
     return out
 
 
 def build_events(adjudicated: pd.DataFrame) -> pd.DataFrame:
+    """Group a firm's own signals into episodes.
+
+    An episode opens only with a filing (a material fact announcing it, or the
+    registry status), except for a firm's very first signal, which may be a
+    monitoring filing of a recovery that began before the data. Monitoring filings
+    never open an episode, however sparse they are. A new filing opens a new
+    episode when the previous one ended (explicit exit or more than a year without
+    any signal) or when it escalates (extrajudicial to judicial or bankruptcy).
+    Liquidation is excluded: for non-financial issuers it is usually a voluntary
+    dissolution, not a default.
+    """
     cols = ["cd_cvm", "name", "event_date", "event_type", "evidence", "link",
             "episode_end", "n_prior_events", "left_truncated"]
-    own = adjudicated[adjudicated["own_filing"]].sort_values(["cd_cvm", "date"], kind="stable")
-    if own.empty:
-        return pd.DataFrame(columns=cols)
-    gap = own.groupby("cd_cvm")["date"].diff() > EPISODE_GAP
-    own = own.assign(episode=gap.groupby(own["cd_cvm"]).cumsum())
+    sig = adjudicated[(adjudicated["own_filing"] | (adjudicated["status"] == "exit"))
+                      & (adjudicated["event_type"] != "LIQ")]
+    order = {"filing": 0, "ongoing": 1, "exit": 2}
+    sig = sig.assign(_o=sig["status"].map(order)).sort_values(["cd_cvm", "date", "_o"], kind="stable")
     rows = []
-    for (cd, _), g in own.groupby(["cd_cvm", "episode"], sort=True):
-        first = g.iloc[0]
-        typed = g["event_type"].dropna()
-        start, end = g["date"].min(), g["date"].max()
-        rows.append({"cd_cvm": cd, "name": first["name"], "event_date": start,
-                     "event_type": typed.iloc[0] if len(typed) else "RJ",
-                     "evidence": first["evidence"], "link": first["link"], "episode_end": end,
-                     "left_truncated": bool(start < WINDOW_START <= end)})
+    for cd, g in sig.groupby("cd_cvm", sort=True):
+        cur = None
+        for s in g.itertuples(index=False):
+            typ = s.event_type if isinstance(s.event_type, str) else None
+            if s.status == "exit":
+                if cur is not None:
+                    cur["exited"] = True
+                    cur["episode_end"] = max(cur["episode_end"], s.date)
+                continue
+            if cur is None:
+                cur = _open(cd, s, typ)
+                continue
+            new = s.status == "filing" and (
+                cur["exited"] or s.date - cur["episode_end"] > EPISODE_GAP
+                or (cur["event_type"], typ) in ESCALATION)
+            if new:
+                rows.append(cur)
+                cur = _open(cd, s, typ)
+            else:
+                cur["episode_end"] = max(cur["episode_end"], s.date)
+                cur["event_type"] = cur["event_type"] or typ
+        if cur is not None:
+            rows.append(cur)
+    if not rows:
+        return pd.DataFrame(columns=cols)
     ev = pd.DataFrame(rows)
+    ev["event_type"] = ev["event_type"].fillna("RJ")
+    ev["left_truncated"] = [bool(a < WINDOW_START <= b) for a, b in zip(ev["event_date"], ev["episode_end"])]
     ev["n_prior_events"] = ev.groupby("cd_cvm").cumcount()
     return ev[cols].reset_index(drop=True)
+
+
+def _open(cd, s, typ) -> dict:
+    return {"cd_cvm": cd, "name": s.name, "event_date": s.date, "event_type": typ, "evidence": s.evidence,
+            "link": s.link, "episode_end": s.date, "exited": False}
+
+
+def non_financial(ev: pd.DataFrame, cad: pd.DataFrame) -> pd.DataFrame:
+    """Drop banks, insurers and other financial issuers. The registry may repeat a company."""
+    from .panel import is_financial
+
+    sector = cad.drop_duplicates("cd_cvm").set_index("cd_cvm")["sector"]
+    return ev[~ev["cd_cvm"].map(sector).map(is_financial).fillna(False).astype(bool)]
 
 
 def review_sheet(ev: pd.DataFrame, path: Path) -> None:
