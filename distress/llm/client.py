@@ -11,20 +11,36 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Callable
 
 URL = "https://openrouter.ai/api/v1/chat/completions"
 CACHE = Path(__file__).resolve().parents[2] / "cache" / "llm"
+_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(path: Path) -> threading.Lock:
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(str(path.resolve()), threading.Lock())
 
 
 class BudgetExceeded(RuntimeError):
     pass
 
 
-def _replace(src: Path, dst: Path) -> None:
-    os.replace(src, dst)
+def _replace(src: Path, dst: Path, tries: int = 20) -> None:
+    """os.replace, retried briefly: on Windows a just-written file can be held by a scanner."""
+    for i in range(tries):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(0.02 * (i + 1))
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -85,10 +101,11 @@ class LLM:
         return {"spent_usd": 0.0, "calls": 0}
 
     def _charge(self, usd: float) -> None:
-        led = self.ledger()
-        led["spent_usd"] += usd
-        led["calls"] += 1
-        _atomic_write(self._ledger_path, json.dumps(led))
+        with _lock_for(self._ledger_path):
+            led = self.ledger()
+            led["spent_usd"] += usd
+            led["calls"] += 1
+            _atomic_write(self._ledger_path, json.dumps(led))
 
     # calls --------------------------------------------------------------
     def _key(self, system: str, user: str, schema) -> str:
@@ -106,8 +123,9 @@ class LLM:
             content = json.loads(path.read_text(encoding="utf-8"))["content"]
             return _parse_json(content) if schema is not None else content
 
-        if self.ledger()["spent_usd"] + self._estimate(system, user) > self.cap:
-            raise BudgetExceeded(f"cap of US$ {self.cap:.2f} would be exceeded")
+        with _lock_for(self._ledger_path):
+            if self.ledger()["spent_usd"] + self._estimate(system, user) > self.cap:
+                raise BudgetExceeded(f"cap of US$ {self.cap:.2f} would be exceeded")
         payload = {"model": self.model, "temperature": 0, "max_tokens": self.max_tokens,
                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                    "usage": {"include": True}}

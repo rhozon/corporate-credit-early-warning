@@ -78,6 +78,23 @@ def test_failed_cache_write_leaves_no_entry_and_rerun_resumes(tmp_path, monkeypa
     assert len(t.calls) == 2
 
 
+def test_ledger_is_exact_under_concurrent_calls(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+
+    class Slow(Transport):
+        def __call__(self, payload):
+            time.sleep(0.01)
+            return super().__call__(payload)
+
+    llm = make(tmp_path, Slow(cost=0.01))
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        list(ex.map(lambda i: llm.complete("s", f"u{i}"), range(40)))
+    ledger = json.loads((tmp_path / "ledger.json").read_text())
+    assert ledger["calls"] == 40
+    assert ledger["spent_usd"] == pytest.approx(0.40)
+
+
 def test_invalid_json_under_schema_raises(tmp_path):
     llm = make(tmp_path, Transport(content="not json"))
     with pytest.raises(ValueError):
