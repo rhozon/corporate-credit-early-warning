@@ -28,6 +28,25 @@ def test_daily_series_is_averaged_to_month_start():
     assert s.loc["2024-02-01"] == 5.0
 
 
+def test_long_requests_are_split_into_ten_year_windows():
+    windows = sgs.windows("2008-01-01", "2026-11-20")
+    assert windows[0] == ("01/01/2008", "31/12/2017")
+    assert windows[1] == ("01/01/2018", "20/11/2026")
+    assert all(int(b[-4:]) - int(a[-4:]) <= 9 for a, b in windows)
+
+
+def test_fetch_concatenates_windows(monkeypatch):
+    calls = []
+
+    def fake_get(code, a, b):
+        calls.append((a, b))
+        return json.dumps([{"data": a, "valor": "1.0"}])
+
+    monkeypatch.setattr(sgs, "_get_window", fake_get)
+    out = json.loads(sgs._fetch(432, "2008-01-01", end="2026-11-20"))
+    assert len(calls) == 2 and len(out) == 2
+
+
 def test_series_reads_cache_first(tmp_path, monkeypatch):
     (tmp_path / "sgs_432.json").write_text(json.dumps([{"data": "01/01/2024", "valor": "11.65"}]))
     monkeypatch.setattr(sgs, "_fetch", lambda *a, **k: (_ for _ in ()).throw(AssertionError("network")))

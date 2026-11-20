@@ -57,16 +57,21 @@ def load_events() -> pd.DataFrame:
 def cmd_panel(a):
     from . import features, macro as macro_mod, panel
 
-    codes = {c for cs in features.STOCK.values() for c in cs} | set(features.FLOW.values())
-    parts = []
-    for kind, years in (("itr", ITR_YEARS), ("dfp", DFP_YEARS)):
-        for table in ("BPA", "BPP", "DRE"):
-            st = cvm.read_statements(kind, years, table)
-            parts.append(st[st["code"].isin(codes)])
-    stmts = pd.concat(parts, ignore_index=True)
-    print("statement rows:", len(stmts), "firms:", stmts["cd_cvm"].nunique())
-    pit = features.point_in_time(stmts)
     m = macro_mod.build_macro()
+    pit_path = DATA / "pit.parquet"
+    if pit_path.exists():
+        pit = pd.read_parquet(pit_path)
+    else:
+        codes = {c for cs in features.STOCK.values() for c in cs} | set(features.FLOW.values())
+        parts = []
+        for kind, years in (("itr", ITR_YEARS), ("dfp", DFP_YEARS)):
+            for table in ("BPA", "BPP", "DRE"):
+                st = cvm.read_statements(kind, years, table)
+                parts.append(st[st["code"].isin(codes)])
+        stmts = pd.concat(parts, ignore_index=True)
+        print("statement rows:", len(stmts), "firms:", stmts["cd_cvm"].nunique())
+        pit = features.point_in_time(stmts)
+        pit.to_parquet(pit_path, index=False)
     ipca = macro_mod.sgs.series(433, "2008-01-01")
     index = (1 + ipca / 100).cumprod()
     deflator = index / index.iloc[-1]
@@ -90,6 +95,41 @@ def cmd_panel(a):
           f"(events {int(train['event'].sum())}), test rows {len(test)} (events {int(test['event'].sum())})")
 
 
+def cmd_signals(a):
+    import json
+
+    from .llm import signals
+
+    cad = cvm.read_cad().drop_duplicates("cd_cvm")
+    ipe = cvm.read_ipe(range(2010, 2027))
+    fr = ipe[ipe["category"].str.startswith("Fato Relevante")]
+    fr = events.non_financial(fr, cad).dropna(subset=["delivered"]).sort_values(["cd_cvm", "delivered"])
+    fr = fr[fr["subject"].str.strip() != ""].reset_index(drop=True)
+    print("material facts to classify:", len(fr))
+    out = {}
+    for tag, which in (("primary", PRIMARY), ("secondary", SECONDARY)):
+        if a.only and tag != a.only:
+            continue
+        model = llm(which, max_tokens=1500)
+        cl = signals.classify_subjects(fr, model, batch=25, workers=a.workers)
+        cl.to_parquet(DATA / f"signals_{tag}.parquet", index=False)
+        out[tag] = cl
+        print(tag, "done; spend:", model.ledger())
+    (ROOT / "results").mkdir(exist_ok=True)
+    (ROOT / "results" / "llm_models.json").write_text(json.dumps(
+        {"primary": {"model": PRIMARY[0], "usd_per_token_in": PRIMARY[1], "usd_per_token_out": PRIMARY[2]},
+         "secondary": {"model": SECONDARY[0], "usd_per_token_in": SECONDARY[1], "usd_per_token_out": SECONDARY[2]},
+         "temperature": 0, "batch": 25}, indent=2))
+    if len(out) == 2:
+        kappa = signals.agreement(out["primary"], out["secondary"])
+        (ROOT / "results" / "llm_agreement.json").write_text(json.dumps(kappa, indent=2))
+        print("kappa:", {k: round(v, 2) for k, v in kappa.items()})
+    if a.sheet and "primary" in out:
+        cl = out["primary"].assign(name=fr["name"], subject=fr["subject"], link=fr["link"])
+        signals.gold_sheet(cl, Path(a.sheet), n=150)
+        print("gold sheet:", a.sheet)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="distress")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -100,6 +140,11 @@ def main(argv=None):
     pn.add_argument("--end", default="2026-09-30")
     pn.add_argument("--data-end", default="2026-11-20")
     pn.set_defaults(fn=cmd_panel)
+    sg = sub.add_parser("signals")
+    sg.add_argument("--workers", type=int, default=8)
+    sg.add_argument("--only", choices=["primary", "secondary"], default=None)
+    sg.add_argument("--sheet", default=None)
+    sg.set_defaults(fn=cmd_signals)
     a = p.parse_args(argv)
     a.fn(a)
 

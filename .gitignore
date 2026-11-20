@@ -5,3 +5,4 @@ __pycache__/
 data/raw/
 *.tmp
 *.json.part
+data/pit.parquet

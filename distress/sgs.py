@@ -6,17 +6,42 @@ from pathlib import Path
 
 import pandas as pd
 
-URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{code}/dados?formato=json&dataInicial={start}"
+URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{code}/dados?formato=json&dataInicial={start}&dataFinal={end}"
 CACHE = Path(__file__).resolve().parents[1] / "data" / "macro"
 
 
-def _fetch(code: int, start: str) -> str:
+def windows(start: str, end: str) -> list[tuple[str, str]]:
+    """Calendar windows of at most ten years; the API refuses longer requests for daily series."""
+    s, e = pd.Timestamp(start), pd.Timestamp(end)
+    out = []
+    while s <= e:
+        stop = min(pd.Timestamp(s.year + 9, 12, 31), e)
+        out.append((s.strftime("%d/%m/%Y"), stop.strftime("%d/%m/%Y")))
+        s = stop + pd.Timedelta(days=1)
+    return out
+
+
+def _get_window(code: int, a: str, b: str, tries: int = 5) -> str:
+    import time
+
     import requests
 
-    d = pd.Timestamp(start).strftime("%d/%m/%Y")
-    r = requests.get(URL.format(code=code, start=d), timeout=120)
-    r.raise_for_status()
-    return r.text
+    for i in range(tries):
+        r = requests.get(URL.format(code=code, start=a, end=b), timeout=120)
+        if r.status_code >= 500 and i < tries - 1:
+            time.sleep(5 * (i + 1))
+            continue
+        r.raise_for_status()
+        return r.text
+    raise RuntimeError("unreachable")
+
+
+def _fetch(code: int, start: str, end: str | None = None) -> str:
+    end = end or pd.Timestamp.today().strftime("%Y-%m-%d")
+    rows = []
+    for a, b in windows(start, end):
+        rows += json.loads(_get_window(code, a, b))
+    return json.dumps(rows)
 
 
 def parse(payload: str) -> pd.Series:
