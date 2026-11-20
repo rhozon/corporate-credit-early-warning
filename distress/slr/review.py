@@ -31,6 +31,20 @@ STRANDS = {
 YEARS = "2000-2026"
 TYPES = "article|review|preprint"
 
+# Same strings in Semantic Scholar bulk-search syntax (+ is AND, | is OR).
+S2 = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
+S2_FIELDS = "title,abstract,year,venue,journal,externalIds,citationCount,openAccessPdf,publicationTypes"
+S2_STRANDS = {
+    "a": '("bankruptcy prediction" | "default prediction" | "financial distress" | "corporate default" | '
+         '"corporate failure" | "business failure") + ("survival analysis" | "hazard model" | '
+         '"machine learning" | "deep learning" | "neural network")',
+    "b": '("large language model" | LLM | GPT | "textual analysis" | "text mining" | '
+         '"natural language processing") + ("credit risk" | "default prediction" | bankruptcy | '
+         '"financial distress")',
+    "c": '(Brazil | Brazilian | Brasil) + (bankruptcy | "financial distress" | insolvency | '
+         '"judicial recovery" | "corporate default" | "recuperação judicial" | falência)',
+}
+
 
 # search ----------------------------------------------------------------------
 def search(strand: str, cache_dir: Path = SLR / "raw", per_page: int = 200) -> list[dict]:

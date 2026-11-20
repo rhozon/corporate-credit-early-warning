@@ -95,6 +95,29 @@ def test_ledger_is_exact_under_concurrent_calls(tmp_path):
     assert ledger["spent_usd"] == pytest.approx(0.40)
 
 
+def test_google_payload_folds_system_into_user_and_sets_temperature():
+    payload = {"model": "google/gemma-4-31b-it", "temperature": 0, "max_tokens": 300,
+               "messages": [{"role": "system", "content": "SYS"}, {"role": "user", "content": "USER"}]}
+    url, body = llm_client._google_request(payload, key="K")
+    assert url.endswith("/models/gemma-4-31b-it:generateContent?key=K")
+    assert body["contents"][0]["parts"][0]["text"] == "SYS\n\nUSER"
+    assert body["generationConfig"] == {"temperature": 0, "maxOutputTokens": 300,
+                                        "thinkingConfig": {"thinkingLevel": "minimal"}}
+
+
+def test_google_response_maps_to_chat_shape_with_zero_cost():
+    resp = {"candidates": [{"content": {"parts": [{"text": '{"a":'}, {"text": " 1}"}]}}],
+            "usageMetadata": {"promptTokenCount": 50, "candidatesTokenCount": 7}}
+    out = llm_client._google_parse(resp)
+    assert out["choices"][0]["message"]["content"] == '{"a": 1}'
+    assert out["usage"] == {"prompt_tokens": 50, "completion_tokens": 7, "cost": 0.0}
+
+
+def test_google_models_pick_the_google_transport(tmp_path):
+    assert LLM("google/gemma-4-31b-it", cache_dir=tmp_path).transport is llm_client._google
+    assert LLM("qwen/qwen3", cache_dir=tmp_path).transport is llm_client._http
+
+
 def test_invalid_json_under_schema_raises(tmp_path):
     llm = make(tmp_path, Transport(content="not json"))
     with pytest.raises(ValueError):

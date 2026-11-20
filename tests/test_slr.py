@@ -30,6 +30,25 @@ def test_records_are_normalised_and_deduplicated_by_doi_and_title():
     assert deduped.iloc[0]["venue"] == "Journal of Finance"
 
 
+def test_semantic_scholar_records_share_the_same_columns():
+    raw = [{"paperId": "abc", "externalIds": {"DOI": "10.1/XY"}, "title": "Deep survival for default",
+            "abstract": "We predict default.", "year": 2021, "venue": "Expert Syst. Appl.",
+            "journal": {"name": "Expert Systems with Applications"}, "citationCount": 42,
+            "openAccessPdf": {"url": "http://oa.pdf"}, "publicationTypes": ["JournalArticle"]},
+           {"paperId": "def", "externalIds": {}, "title": "No abstract", "abstract": None, "year": 2019,
+            "venue": "", "journal": None, "citationCount": 0, "openAccessPdf": None, "publicationTypes": None}]
+    df = review.normalise_s2(raw, strand="a")
+    oa = review.normalise([work("W1", "t", doi="10.1/a")], strand="a")
+    assert list(df.columns) == list(oa.columns)
+    assert df.iloc[0][["doi", "venue", "is_oa", "cited_by"]].tolist() == ["10.1/xy", "Expert Systems with Applications", True, 42]
+    assert df.iloc[1]["abstract"] == "" and not df.iloc[1]["is_oa"]
+
+
+def test_every_strand_has_a_semantic_scholar_query():
+    assert set(review.S2_STRANDS) == set(review.STRANDS)
+    assert all("+" in q and "|" in q for q in review.S2_STRANDS.values())
+
+
 def test_screening_parser_accepts_only_known_decisions():
     ok = review.parse_screen({"items": [{"i": 1, "decision": "include", "reason": "x"},
                                         {"i": 2, "decision": "exclude", "reason": "consumer"}]}, n=2)

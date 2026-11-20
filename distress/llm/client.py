@@ -70,6 +70,45 @@ def _http(payload: dict, timeout: int = 120, tries: int = 4) -> dict:
     raise RuntimeError("unreachable")
 
 
+GOOGLE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+
+
+def _google_request(payload: dict, key: str) -> tuple[str, dict]:
+    """Chat payload to a Gemini API request. Gemma models take no separate system instruction."""
+    model = payload["model"].split("/", 1)[1]
+    text = "\n\n".join(m["content"] for m in payload["messages"])
+    body = {"contents": [{"role": "user", "parts": [{"text": text}]}],
+            "generationConfig": {"temperature": payload.get("temperature", 0),
+                                 "maxOutputTokens": payload.get("max_tokens", 800),
+                                 # Gemma 4 reasons before answering; keep that to a minimum for classification.
+                                 "thinkingConfig": {"thinkingLevel": "minimal"}}}
+    return GOOGLE.format(model=model, key=key), body
+
+
+def _google_parse(resp: dict) -> dict:
+    parts = ((resp.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+    u = resp.get("usageMetadata", {})
+    return {"choices": [{"message": {"content": text}}],
+            "usage": {"prompt_tokens": u.get("promptTokenCount", 0),
+                      "completion_tokens": u.get("candidatesTokenCount", 0), "cost": 0.0}}
+
+
+def _google(payload: dict, timeout: int = 180, tries: int = 8) -> dict:
+    """Google AI Studio (free tier). Rate limits answer 429; back off and retry."""
+    import requests
+
+    url, body = _google_request(payload, os.environ["GOOGLE_API_KEY"])
+    for i in range(tries):
+        r = requests.post(url, json=body, timeout=timeout)
+        if r.status_code in (429, 500, 503) and i < tries - 1:
+            time.sleep(min(60, 8 * (i + 1)))
+            continue
+        r.raise_for_status()
+        return _google_parse(r.json())
+    raise RuntimeError("unreachable")
+
+
 def _parse_json(text: str):
     t = text.strip()
     if t.startswith("```"):
@@ -87,7 +126,7 @@ class LLM:
                  price_out: float = 4e-6, max_tokens: int = 800, safety: float = 1.5):
         self.model, self.cap, self.max_tokens, self.safety = model, cap_usd, max_tokens, safety
         self.cache_dir = Path(cache_dir)
-        self.transport = transport or _http
+        self.transport = transport or (_google if model.startswith("google/") else _http)
         self.price_in, self.price_out = price_in, price_out
 
     # ledger -------------------------------------------------------------

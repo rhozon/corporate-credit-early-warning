@@ -15,8 +15,11 @@ from .llm.client import LLM
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
-PRIMARY = ("qwen/qwen3-235b-a22b-2507", 1.4e-7, 8e-7)
-SECONDARY = ("openai/gpt-oss-120b", 9e-8, 3.6e-7)
+# Event adjudication ran on Qwen3 via OpenRouter; signals and screening run on Gemma 4 (open weights) via
+# Google AI Studio, free tier.
+EVENTS_MODEL = ("qwen/qwen3-235b-a22b-2507", 1.4e-7, 8e-7)
+PRIMARY = ("google/gemma-4-26b-a4b-it", 0.0, 0.0)
+SECONDARY = ("google/gemma-4-31b-it", 0.0, 0.0)
 IPE_YEARS = range(2003, 2027)
 
 
@@ -30,14 +33,14 @@ def cmd_events(a):
     ipe = cvm.read_ipe(IPE_YEARS)
     cands = events.candidate_events(cad, ipe)
     print("candidates by source:", cands["source"].value_counts().to_dict())
-    adj = events.adjudicate(cands, event_classifier(llm()))
+    adj = events.adjudicate(cands, event_classifier(llm(EVENTS_MODEL)))
     adj.to_csv(DATA / "events_adjudicated.csv", index=False)
     ev = events.build_events(adj)
     ev = events.non_financial(ev, cad)
     ev.to_csv(DATA / "events_draft.csv", index=False)
     print(f"events: {len(ev)} in {ev['cd_cvm'].nunique()} firms; in window (2011+): "
           f"{(ev['event_date'] >= events.WINDOW_START).sum()}; left-truncated: {ev['left_truncated'].sum()}")
-    print("LLM spend so far:", llm().ledger())
+    print("LLM spend so far:", llm(EVENTS_MODEL).ledger())
     if a.sheet:
         events.review_sheet(ev[ev["event_date"] >= pd.Timestamp("2008-01-01")], Path(a.sheet))
         print("review sheet:", a.sheet)
@@ -107,25 +110,29 @@ def cmd_signals(a):
     fr = fr[fr["subject"].str.strip() != ""].reset_index(drop=True)
     print("material facts to classify:", len(fr))
     out = {}
-    for tag, which in (("primary", PRIMARY), ("secondary", SECONDARY)):
+    # The second reader codes a random subsample, enough to estimate agreement.
+    sub = fr.sample(n=min(a.secondary_sample, len(fr)), random_state=2026).sort_index()
+    for tag, which, docs in (("primary", PRIMARY, fr), ("secondary", SECONDARY, sub)):
         if a.only and tag != a.only:
             continue
-        model = llm(which, max_tokens=1500)
-        cl = signals.classify_subjects(fr, model, batch=25, workers=a.workers)
-        cl.to_parquet(DATA / f"signals_{tag}.parquet", index=False)
+        model = llm(which, max_tokens=3000)
+        cl = signals.classify_subjects(docs, model, batch=40, workers=a.workers)
+        cl.index = docs.index
+        cl.to_parquet(DATA / f"signals_{tag}.parquet")
         out[tag] = cl
-        print(tag, "done; spend:", model.ledger())
+        print(tag, "done:", len(cl), "documents")
     (ROOT / "results").mkdir(exist_ok=True)
     (ROOT / "results" / "llm_models.json").write_text(json.dumps(
         {"primary": {"model": PRIMARY[0], "usd_per_token_in": PRIMARY[1], "usd_per_token_out": PRIMARY[2]},
          "secondary": {"model": SECONDARY[0], "usd_per_token_in": SECONDARY[1], "usd_per_token_out": SECONDARY[2]},
-         "temperature": 0, "batch": 25}, indent=2))
+         "temperature": 0, "batch": 40, "secondary_sample": a.secondary_sample}, indent=2))
     if len(out) == 2:
-        kappa = signals.agreement(out["primary"], out["secondary"])
+        kappa = signals.agreement(out["primary"].loc[out["secondary"].index], out["secondary"])
         (ROOT / "results" / "llm_agreement.json").write_text(json.dumps(kappa, indent=2))
         print("kappa:", {k: round(v, 2) for k, v in kappa.items()})
     if a.sheet and "primary" in out:
         cl = out["primary"].assign(name=fr["name"], subject=fr["subject"], link=fr["link"])
+        cl.reset_index(drop=False).rename(columns={"index": "doc_id"}).to_parquet(DATA / "signals_primary_docs.parquet")
         signals.gold_sheet(cl, Path(a.sheet), n=150)
         print("gold sheet:", a.sheet)
 
@@ -141,7 +148,8 @@ def main(argv=None):
     pn.add_argument("--data-end", default="2026-11-20")
     pn.set_defaults(fn=cmd_panel)
     sg = sub.add_parser("signals")
-    sg.add_argument("--workers", type=int, default=8)
+    sg.add_argument("--workers", type=int, default=4)
+    sg.add_argument("--secondary-sample", type=int, default=3000)
     sg.add_argument("--only", choices=["primary", "secondary"], default=None)
     sg.add_argument("--sheet", default=None)
     sg.set_defaults(fn=cmd_signals)
