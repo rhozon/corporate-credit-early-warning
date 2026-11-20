@@ -205,18 +205,9 @@ def screen_with(llm, recs: pd.DataFrame, batch: int = 10, workers: int = 8) -> l
         return [d for r in ex.map(lambda c: _screen_batch(llm, c), chunks) for d in r]
 
 
-def screen(recs: pd.DataFrame, llm_a, llm_b, llm_c, workers: int = 8) -> pd.DataFrame:
-    out = recs.copy()
-    a, b = screen_with(llm_a, recs, workers=workers), screen_with(llm_b, recs, workers=workers)
-    out["decision_a"], out["decision_b"] = [d["decision"] for d in a], [d["decision"] for d in b]
-    out["reason_a"], out["reason_b"] = [d["reason"] for d in a], [d["reason"] for d in b]
-    out["final"] = out["decision_a"].where(out["decision_a"] == out["decision_b"])
-    dis = out["final"].isna()
-    if dis.any():
-        c = screen_with(llm_c, recs[dis], workers=workers)
-        out.loc[dis, "final"] = [d["decision"] for d in c]
-        out.loc[dis, "reason_c"] = [d["reason"] for d in c]
-    return out
+def combine(a: pd.Series, b: pd.Series) -> pd.Series:
+    """Inclusive rule (protocol amendment 2): a record either screener includes goes to full text."""
+    return pd.Series(["include" if "include" in (x, y) else "exclude" for x, y in zip(a, b)], index=a.index)
 
 
 def prisma_counts(identified: int, after_dedup: int, screened: pd.DataFrame) -> dict:

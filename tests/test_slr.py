@@ -57,6 +57,12 @@ def test_screening_parser_accepts_only_known_decisions():
         review.parse_screen({"items": [{"i": 1, "decision": "maybe"}]}, n=1)
 
 
+def test_inclusive_rule_keeps_a_record_either_screener_includes():
+    a = pd.DataFrame({"decision": ["include", "exclude", "exclude", "include"]})
+    b = pd.DataFrame({"decision": ["include", "include", "exclude", "exclude"]})
+    assert review.combine(a["decision"], b["decision"]).tolist() == ["include", "include", "exclude", "include"]
+
+
 def test_prisma_counts_add_up():
     screened = pd.DataFrame({"final": ["include", "exclude", "exclude", "include"],
                              "is_oa": [True, True, False, False]})

@@ -137,6 +137,43 @@ def cmd_signals(a):
         print("gold sheet:", a.sheet)
 
 
+def slr_records() -> tuple[int, pd.DataFrame]:
+    from .slr import review
+
+    raw = pd.concat([review.normalise_s2(review.search_s2(s), s) for s in "abc"], ignore_index=True)
+    recs = review.dedupe(raw[raw["title"].str.strip() != ""])
+    return len(raw), recs
+
+
+def cmd_slr(a):
+    import json
+
+    from .slr import review
+
+    identified, recs = slr_records()
+    if a.step == "screen":
+        model = llm(PRIMARY if a.which == "primary" else SECONDARY, max_tokens=3000)
+        dec = review.screen_with(model, recs, batch=10, workers=a.workers)
+        out = pd.DataFrame({"openalex_id": recs["openalex_id"], "decision": [d["decision"] for d in dec],
+                            "reason": [d["reason"] for d in dec]})
+        out.to_csv(review.SLR / f"screen_{a.which}.csv", index=False)
+        print(a.which, out["decision"].value_counts().to_dict())
+    elif a.step == "combine":
+        p = pd.read_csv(review.SLR / "screen_primary.csv").set_index("openalex_id")
+        s = pd.read_csv(review.SLR / "screen_secondary.csv").set_index("openalex_id")
+        r = recs.set_index("openalex_id")
+        r["decision_a"], r["reason_a"] = p["decision"], p["reason"]
+        r["decision_b"], r["reason_b"] = s["decision"], s["reason"]
+        r["final"] = review.combine(r["decision_a"], r["decision_b"])
+        from sklearn.metrics import cohen_kappa_score
+        kappa = cohen_kappa_score(r["decision_a"], r["decision_b"])
+        r.reset_index().to_csv(review.SLR / "screening.csv", index=False)
+        counts = review.prisma_counts(identified, len(recs), r) | {"kappa_screeners": round(float(kappa), 3),
+                                                                   "agreement": round(float((r["decision_a"] == r["decision_b"]).mean()), 3)}
+        (review.SLR / "prisma.json").write_text(json.dumps(counts, indent=2))
+        print(counts)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="distress")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -153,6 +190,11 @@ def main(argv=None):
     sg.add_argument("--only", choices=["primary", "secondary"], default=None)
     sg.add_argument("--sheet", default=None)
     sg.set_defaults(fn=cmd_signals)
+    sl = sub.add_parser("slr")
+    sl.add_argument("step", choices=["screen", "combine"])
+    sl.add_argument("--which", choices=["primary", "secondary"], default="primary")
+    sl.add_argument("--workers", type=int, default=3)
+    sl.set_defaults(fn=cmd_slr)
     a = p.parse_args(argv)
     a.fn(a)
 
