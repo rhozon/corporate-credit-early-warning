@@ -46,3 +46,16 @@ text, main finding. Studies without open access contribute their abstract only, 
 Narrative synthesis with tables by model family, validation design and use of text, ordered by the impact of
 the publication venue (OpenAlex citation statistics), which is reported but is not an inclusion criterion.
 Gaps are stated against the three questions.
+
+## Amendments
+
+**Amendment 1, 2026-11-20 (before screening).** Anonymous access to OpenAlex exhausted its daily budget during
+the first search (HTTP 401), before any strand was complete, so no OpenAlex record was used. The search was run
+on the Semantic Scholar Academic Graph (bulk search endpoint) with the same three strings translated to its
+syntax (`S2_STRANDS` in `distress/slr/review.py`) and the same period. That endpoint has no document-type
+filter; editorials and non-empirical records are removed at screening.
+
+**Amendment 2, 2026-11-20 (before screening).** The screening models are Gemma 4 26B-A4B and Gemma 4 31B
+(open weights, Google AI Studio). Only two suitable models were available at no cost, so disagreements are not
+resolved by a third model: a record either model includes goes on to full-text assessment (an inclusive rule
+that protects recall). Eligibility is checked again on the full text of open-access records.

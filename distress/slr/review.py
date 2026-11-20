@@ -73,6 +73,52 @@ def search(strand: str, cache_dir: Path = SLR / "raw", per_page: int = 200) -> l
     return out
 
 
+def search_s2(strand: str, cache_dir: Path = SLR / "raw") -> list[dict]:
+    """Semantic Scholar bulk search, paged by token, cached per strand."""
+    import requests
+
+    path = Path(cache_dir) / f"s2_{strand}.json"
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    params = {"query": S2_STRANDS[strand], "fields": S2_FIELDS, "year": YEARS}
+    out, token = [], None
+    while True:
+        if token:
+            params["token"] = token
+        for i in range(8):
+            r = requests.get(S2, params=params, headers=UA, timeout=120)
+            if r.status_code in (429, 500, 502, 503, 504) and i < 7:
+                time.sleep(5 * (i + 1))
+                continue
+            r.raise_for_status()
+            break
+        data = r.json()
+        out += data.get("data") or []
+        token = data.get("token")
+        if not token:
+            break
+        time.sleep(1.5)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    return out
+
+
+def normalise_s2(raw: list[dict], strand: str) -> pd.DataFrame:
+    rows = []
+    for w in raw:
+        ext = w.get("externalIds") or {}
+        journal = (w.get("journal") or {}).get("name") or w.get("venue") or None
+        pdf = w.get("openAccessPdf") or {}
+        types = w.get("publicationTypes") or []
+        rows.append({"openalex_id": f"s2:{w.get('paperId')}", "doi": _doi(ext.get("DOI")),
+                     "title": w.get("title") or "", "year": w.get("year"),
+                     "type": types[0] if types else None, "language": None,
+                     "abstract": w.get("abstract") or "", "venue": journal or None, "source_id": None,
+                     "cited_by": w.get("citationCount") or 0, "is_oa": bool(pdf.get("url")),
+                     "oa_url": pdf.get("url"), "strand": strand})
+    return pd.DataFrame(rows)
+
+
 def abstract(inv: dict | None) -> str:
     if not inv:
         return ""
