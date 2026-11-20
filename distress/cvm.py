@@ -140,3 +140,24 @@ def read_statements(kind: str, years, table: str, raw_dir: Path = RAW) -> pd.Dat
     st = pd.concat(frames, ignore_index=True)
     cols = ["cd_cvm", "dt_refer", "version", "consolidated", "code", "value", "dt_receb"]
     return st[cols + [c for c in st.columns if c not in cols]]
+
+
+def read_parecer(kind: str, years, raw_dir: Path = RAW) -> pd.DataFrame:
+    """Auditor reports and management statements, with the filing date of each."""
+    frames = []
+    for y in years:
+        z = zipfile.ZipFile(download(kind, y, raw_dir))
+        name = f"{kind}_cia_aberta_parecer_{y}.csv"
+        if name not in z.namelist():
+            continue
+        idx = _csv(z.open(f"{kind}_cia_aberta_{y}.csv"))
+        idx = idx.assign(cd_cvm=idx["CD_CVM"].astype(int), version=idx["VERSAO"].astype(int),
+                         dt_receb=pd.to_datetime(idx["DT_RECEB"], errors="coerce"))
+        d = _csv(z.open(name)).assign(version=lambda x: x["VERSAO"].astype(int))
+        d = d.merge(idx[["CNPJ_CIA", "DT_REFER", "version", "cd_cvm", "dt_receb"]],
+                    on=["CNPJ_CIA", "DT_REFER", "version"], how="inner")
+        frames.append(pd.DataFrame({"cd_cvm": d["cd_cvm"], "dt_refer": d["DT_REFER"], "version": d["version"],
+                                    "dt_receb": d["dt_receb"], "kind": d["TP_PARECER_DECL"],
+                                    "text": d["TXT_PARECER_DECL"].fillna("")}))
+    cols = ["cd_cvm", "dt_refer", "version", "dt_receb", "kind", "text"]
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=cols)
