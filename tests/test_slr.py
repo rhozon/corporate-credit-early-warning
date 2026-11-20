@@ -63,6 +63,28 @@ def test_inclusive_rule_keeps_a_record_either_screener_includes():
     assert review.combine(a["decision"], b["decision"]).tolist() == ["include", "include", "exclude", "include"]
 
 
+def test_extraction_parser_validates_vocabularies():
+    good = {"items": [{"i": 1, "families": ["survival", "ml_trees"], "validation": "out_of_time", "country": "Brazil",
+                       "unit": "listed", "uses_text": False, "uses_llm": False, "n_events": 120}]}
+    out = review.parse_extract(good, n=2)
+    assert out[0]["families"] == ["survival", "ml_trees"] and out[0]["n_events"] == 120
+    assert out[1]["validation"] == "unclear" and out[1]["families"] == []
+    with pytest.raises(ValueError):
+        review.parse_extract({"items": [{"i": 1, "families": ["astrology"], "validation": "unclear"}]}, n=1)
+
+
+def test_synthesis_tables_count_families_and_validation():
+    ex = pd.DataFrame({"year": [2005, 2015, 2021, 2023],
+                       "families": [["statistical"], ["ml_trees", "statistical"], ["deep_learning"], ["survival", "text_llm"]],
+                       "validation": ["in_sample", "holdout_random", "out_of_time", "out_of_time"],
+                       "uses_text": [False, False, False, True], "uses_llm": [False, False, False, True],
+                       "country": ["USA", "China", "Brazil", "Brazil"]})
+    t = review.synthesis(ex)
+    assert t["families"].loc["statistical", "2000-2009"] == 1 and t["families"].loc["statistical", "2010-2019"] == 1
+    assert t["validation"]["out_of_time"] == 2
+    assert t["share_out_of_time"] == 0.5 and t["n_brazil"] == 2 and t["n_llm"] == 1
+
+
 def test_prisma_counts_add_up():
     screened = pd.DataFrame({"final": ["include", "exclude", "exclude", "include"],
                              "is_oa": [True, True, False, False]})

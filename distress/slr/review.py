@@ -205,6 +205,74 @@ def screen_with(llm, recs: pd.DataFrame, batch: int = 10, workers: int = 8) -> l
         return [d for r in ex.map(lambda c: _screen_batch(llm, c), chunks) for d in r]
 
 
+FAMILIES = {"statistical", "ml_trees", "svm", "neural_net", "deep_learning", "survival", "ensemble_hybrid",
+            "text_llm", "other"}
+VALIDATION = {"in_sample", "holdout_random", "cross_validation", "out_of_time", "unclear"}
+UNITS = {"listed", "private_sme", "mixed", "loans", "unclear"}
+
+EXTRACT_SYSTEM = """For each numbered study (title and abstract), extract:
+- families: model families used, from: statistical (discriminant, logit, probit), ml_trees (random forest, boosting,
+  decision trees), svm, neural_net (shallow neural networks), deep_learning (deep, recurrent, convolutional,
+  transformer networks), survival (hazard, Cox, survival forests or survival networks), ensemble_hybrid, text_llm
+  (text mining, NLP, language models), other.
+- validation: in_sample, holdout_random, cross_validation, out_of_time (later period held out), or unclear.
+- country: main country of the data, or "multi", or "unclear".
+- unit: listed, private_sme, mixed, loans, or unclear.
+- uses_text: true if text (reports, filings, news) is an input. uses_llm: true if a large language model is used.
+- n_events: number of default or distress cases if stated, else null.
+Answer only JSON: {"items": [{"i": 1, "families": [...], "validation": "...", "country": "...", "unit": "...",
+"uses_text": false, "uses_llm": false, "n_events": null}, ...]}."""
+
+
+def parse_extract(obj, n: int) -> list[dict]:
+    blank = {"families": [], "validation": "unclear", "country": "unclear", "unit": "unclear",
+             "uses_text": False, "uses_llm": False, "n_events": None}
+    out = [dict(blank) for _ in range(n)]
+    for it in (obj.get("items", []) if isinstance(obj, dict) else []):
+        fam = list(it.get("families") or [])
+        if set(fam) - FAMILIES or it.get("validation", "unclear") not in VALIDATION:
+            raise ValueError(f"out of vocabulary: {it}")
+        i = int(it.get("i", 0))
+        if 1 <= i <= n:
+            ev = it.get("n_events")
+            out[i - 1] = {"families": fam, "validation": it.get("validation", "unclear"),
+                          "country": str(it.get("country") or "unclear"),
+                          "unit": it.get("unit") if it.get("unit") in UNITS else "unclear",
+                          "uses_text": bool(it.get("uses_text")), "uses_llm": bool(it.get("uses_llm")),
+                          "n_events": int(ev) if isinstance(ev, (int, float)) else None}
+    return out
+
+
+def _extract_batch(llm, recs: pd.DataFrame) -> list[dict]:
+    user = "\n\n".join(f"{k + 1}. TITLE: {t}\nABSTRACT: {a[:1800]}" for k, (t, a) in
+                       enumerate(zip(recs["title"], recs["abstract"])))
+    try:
+        return parse_extract(llm.complete(EXTRACT_SYSTEM, user, schema={"type": "object"}), len(recs))
+    except ValueError:
+        if len(recs) == 1:
+            return parse_extract({}, 1)
+        return [d for k in range(len(recs)) for d in _extract_batch(llm, recs.iloc[[k]])]
+
+
+def extract(llm, recs: pd.DataFrame, batch: int = 8, workers: int = 4) -> pd.DataFrame:
+    chunks = [recs.iloc[i:i + batch] for i in range(0, len(recs), batch)]
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        rows = [d for r in ex.map(lambda c: _extract_batch(llm, c), chunks) for d in r]
+    return pd.concat([recs.reset_index(drop=True), pd.DataFrame(rows)], axis=1)
+
+
+def synthesis(ex: pd.DataFrame) -> dict:
+    period = pd.cut(ex["year"], [1999, 2009, 2019, 2100], labels=["2000-2009", "2010-2019", "2020-2026"])
+    long = ex.assign(period=period).explode("families").dropna(subset=["families"])
+    fam = pd.crosstab(long["families"], long["period"]).reindex(columns=["2000-2009", "2010-2019", "2020-2026"],
+                                                                fill_value=0)
+    val = ex["validation"].value_counts()
+    brazil = ex["country"].astype(str).str.contains("brazil|brasil", case=False)
+    return {"families": fam, "validation": val, "share_out_of_time": float((ex["validation"] == "out_of_time").mean()),
+            "n_brazil": int(brazil.sum()), "n_llm": int(ex["uses_llm"].sum()), "n_text": int(ex["uses_text"].sum()),
+            "n": int(len(ex))}
+
+
 def combine(a: pd.Series, b: pd.Series) -> pd.Series:
     """Inclusive rule (protocol amendment 2): a record either screener includes goes to full text."""
     return pd.Series(["include" if "include" in (x, y) else "exclude" for x, y in zip(a, b)], index=a.index)

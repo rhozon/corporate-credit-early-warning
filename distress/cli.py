@@ -158,6 +158,21 @@ def cmd_slr(a):
                             "reason": [d["reason"] for d in dec]})
         out.to_csv(review.SLR / f"screen_{a.which}.csv", index=False)
         print(a.which, out["decision"].value_counts().to_dict())
+    elif a.step == "extract":
+        final = review.SLR / "screening.csv"
+        if final.exists():
+            inc = pd.read_csv(final)
+            ids = set(inc.loc[inc["final"] == "include", "openalex_id"])
+        else:
+            s = pd.read_csv(review.SLR / "screen_primary.csv")
+            ids = set(s.loc[s["decision"] == "include", "openalex_id"])
+        sel = recs[recs["openalex_id"].isin(ids)]
+        ex = review.extract(llm(PRIMARY, max_tokens=4000), sel, batch=8, workers=a.workers)
+        ex.to_parquet(review.SLR / "extraction.parquet", index=False)
+        t = review.synthesis(ex)
+        print({k: v for k, v in t.items() if k not in ("families", "validation")})
+        print(t["families"].to_string())
+        print(t["validation"].to_string())
     elif a.step == "combine":
         p = pd.read_csv(review.SLR / "screen_primary.csv").set_index("openalex_id")
         s = pd.read_csv(review.SLR / "screen_secondary.csv").set_index("openalex_id")
@@ -207,7 +222,7 @@ def main(argv=None):
     sg.add_argument("--sheet", default=None)
     sg.set_defaults(fn=cmd_signals)
     sl = sub.add_parser("slr")
-    sl.add_argument("step", choices=["screen", "combine"])
+    sl.add_argument("step", choices=["screen", "combine", "extract"])
     sl.add_argument("--which", choices=["primary", "secondary"], default="primary")
     sl.add_argument("--workers", type=int, default=3)
     sl.set_defaults(fn=cmd_slr)
