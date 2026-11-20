@@ -49,8 +49,15 @@ def surv_metrics(d_train, e_train, d_test, e_test, risk, pd_curve: pd.DataFrame)
     out = {"c_harrell": concordance_index_censored(yte["event"], yte["time"], risk)[0],
            "c_uno": concordance_index_ipcw(ytr, yte, risk, tau=TIMES[-1])[0]}
     pdm = pd_curve[["pd12", "pd24", "pd36"]].values.astype(float)
-    aucs, _ = cumulative_dynamic_auc(ytr, yte, pdm, list(TIMES))
-    for t, a in zip((12, 24, 36), aucs):
-        out[f"auc_t{t}"] = float(a)
-    out["ibs"] = float(integrated_brier_score(ytr, yte, 1 - pdm, list(TIMES)))
+    # Only horizons inside the test follow-up can be scored.
+    t_max, t_min = float(np.max(yte["time"])), float(np.min(yte["time"]))
+    ok = [k for k, t in enumerate(TIMES) if t_min <= t < t_max]
+    for k, h in enumerate((12, 24, 36)):
+        out[f"auc_t{h}"] = np.nan
+    if ok:
+        aucs, _ = cumulative_dynamic_auc(ytr, yte, pdm[:, ok], [TIMES[k] for k in ok])
+        for k, a in zip(ok, np.atleast_1d(aucs)):
+            out[f"auc_t{(12, 24, 36)[k]}"] = float(a)
+    out["ibs"] = (float(integrated_brier_score(ytr, yte, 1 - pdm[:, ok], [TIMES[k] for k in ok]))
+                  if len(ok) >= 2 else np.nan)
     return out

@@ -64,6 +64,18 @@ def test_calibration_of_well_calibrated_scores():
     assert 0 < m["brier"] < 0.25 and 0.5 < m["auc"] < 1
 
 
+def test_survival_metrics_skip_horizons_beyond_follow_up():
+    rng = np.random.default_rng(5)
+    n = 400
+    risk = rng.normal(size=n)
+    d = np.minimum(rng.exponential(scale=30 * np.exp(-risk)), 30.0)
+    e = (d < 30).astype(int)
+    pdc = pd.DataFrame({f"pd{h}": 1 - np.exp(-h / (30 * np.exp(-risk))) for h in (12, 24, 36)})
+    out = evaluate.surv_metrics(d, e, d, e, risk, pdc)
+    assert np.isnan(out["auc_t36"])
+    assert out["auc_t12"] > 0.6 and np.isfinite(out["ibs"])
+
+
 def test_survival_metrics_reward_correct_ranking():
     rng = np.random.default_rng(4)
     n = 600

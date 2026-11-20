@@ -174,6 +174,22 @@ def cmd_slr(a):
         print(counts)
 
 
+def cmd_validate(a):
+    """Development run inside the training years. The test period is not touched."""
+    from . import experiment, panel as panel_mod
+    from .models import MODELS
+
+    p = pd.read_parquet(DATA / "panel.parquet")
+    train, _ = panel_mod.split(p, data_end=pd.Timestamp(a.data_end))
+    fit, val, fit_end, val_end = experiment.validation_split(train)
+    print(f"fit rows {len(fit)} events {int(fit['event'].sum())}; validation rows {len(val)} events {int(val['event'].sum())}")
+    res, _ = experiment.run(fit, val, experiment.BASE, list(MODELS), fit_end, val_end, fast=a.fast)
+    (ROOT / "results").mkdir(exist_ok=True)
+    res.to_csv(ROOT / "results" / "validation_base.csv", index=False)
+    cols = ["model", "events", "auc", "pr_auc", "ks", "brier", "calib_slope", "c_harrell", "c_uno", "auc_t12", "ibs"]
+    print(res[cols].round(3).to_string(index=False))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="distress")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -195,6 +211,10 @@ def main(argv=None):
     sl.add_argument("--which", choices=["primary", "secondary"], default="primary")
     sl.add_argument("--workers", type=int, default=3)
     sl.set_defaults(fn=cmd_slr)
+    va = sub.add_parser("validate")
+    va.add_argument("--data-end", default="2026-11-20")
+    va.add_argument("--fast", action="store_true")
+    va.set_defaults(fn=cmd_validate)
     a = p.parse_args(argv)
     a.fn(a)
 
