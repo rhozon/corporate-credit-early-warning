@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "corporate-credit-early-warning"
+version = "0.1.0"
+description = "Early warning of judicial recovery and bankruptcy for Brazilian listed companies: survival, machine learning and deep learning models on public CVM data, with disclosure signals read by language models."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Rodrigo Hermont Ozon" }]
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "requests>=2.31",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+models = ["statsmodels>=0.14", "scikit-learn>=1.4", "xgboost>=2.0", "scikit-survival>=0.23", "lifelines>=0.29", "pycox>=0.3", "torch>=2.2", "matplotlib>=3.8"]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["distress"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
