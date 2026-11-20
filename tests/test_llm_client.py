@@ -98,8 +98,9 @@ def test_ledger_is_exact_under_concurrent_calls(tmp_path):
 def test_google_payload_folds_system_into_user_and_sets_temperature():
     payload = {"model": "google/gemma-4-31b-it", "temperature": 0, "max_tokens": 300,
                "messages": [{"role": "system", "content": "SYS"}, {"role": "user", "content": "USER"}]}
-    url, body = llm_client._google_request(payload, key="K")
-    assert url.endswith("/models/gemma-4-31b-it:generateContent?key=K")
+    url, body = llm_client._google_request(payload)
+    assert url.endswith("/models/gemma-4-31b-it:generateContent")
+    assert "key" not in url  # the key travels in a header, so errors and logs never print it
     assert body["contents"][0]["parts"][0]["text"] == "SYS\n\nUSER"
     assert body["generationConfig"] == {"temperature": 0, "maxOutputTokens": 300,
                                         "thinkingConfig": {"thinkingLevel": "minimal"}}

@@ -70,10 +70,10 @@ def _http(payload: dict, timeout: int = 120, tries: int = 4) -> dict:
     raise RuntimeError("unreachable")
 
 
-GOOGLE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+GOOGLE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
-def _google_request(payload: dict, key: str) -> tuple[str, dict]:
+def _google_request(payload: dict) -> tuple[str, dict]:
     """Chat payload to a Gemini API request. Gemma models take no separate system instruction."""
     model = payload["model"].split("/", 1)[1]
     text = "\n\n".join(m["content"] for m in payload["messages"])
@@ -82,7 +82,7 @@ def _google_request(payload: dict, key: str) -> tuple[str, dict]:
                                  "maxOutputTokens": payload.get("max_tokens", 800),
                                  # Gemma 4 reasons before answering; keep that to a minimum for classification.
                                  "thinkingConfig": {"thinkingLevel": "minimal"}}}
-    return GOOGLE.format(model=model, key=key), body
+    return GOOGLE.format(model=model), body
 
 
 def _google_parse(resp: dict) -> dict:
@@ -94,17 +94,28 @@ def _google_parse(resp: dict) -> dict:
                       "completion_tokens": u.get("candidatesTokenCount", 0), "cost": 0.0}}
 
 
-def _google(payload: dict, timeout: int = 180, tries: int = 8) -> dict:
-    """Google AI Studio (free tier). Rate limits answer 429; back off and retry."""
+def _google(payload: dict, timeout: int = 180, tries: int = 30) -> dict:
+    """Google AI Studio (free tier). Rate limits answer 429 and overload 503; back off and retry.
+
+    The key goes in the ``x-goog-api-key`` header so that no URL, traceback or log ever carries it.
+    """
     import requests
 
-    url, body = _google_request(payload, os.environ["GOOGLE_API_KEY"])
+    url, body = _google_request(payload)
+    headers = {"x-goog-api-key": os.environ["GOOGLE_API_KEY"], "Content-Type": "application/json"}
     for i in range(tries):
-        r = requests.post(url, json=body, timeout=timeout)
-        if r.status_code in (429, 500, 503) and i < tries - 1:
-            time.sleep(min(60, 8 * (i + 1)))
+        try:
+            r = requests.post(url, json=body, headers=headers, timeout=timeout)
+        except requests.exceptions.RequestException:
+            if i == tries - 1:
+                raise
+            time.sleep(min(120, 10 * (i + 1)))
             continue
-        r.raise_for_status()
+        if r.status_code in (429, 500, 503) and i < tries - 1:
+            time.sleep(min(120, 10 * (i + 1)))
+            continue
+        if r.status_code >= 400:
+            raise RuntimeError(f"Google API error {r.status_code} for {payload['model']}")
         return _google_parse(r.json())
     raise RuntimeError("unreachable")
 
