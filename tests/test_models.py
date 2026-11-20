@@ -26,7 +26,9 @@ def synthetic_panel(n_firms=400, seed=0):
         ev_date = grid[event_q] + pd.Timedelta(days=45) if event_q is not None else None
         for i, (q, x1, x2) in enumerate(xs):
             t = (ev_date - q).days / 30.44 if ev_date is not None else np.nan
-            rows.append({"cd_cvm": f, "q": q, "x1": x1, "x2": x2, "t_to_event": t,
+            ratios = {"wc_ta": 0.10 - 0.06 * x1 + rng.normal(scale=0.02), "re_ta": 0.05 - 0.05 * x1 + rng.normal(scale=0.02),
+                      "ebit_ta": 0.06 - 0.04 * x1 + rng.normal(scale=0.01), "eq_tl": 0.6 - 0.2 * x1 + rng.normal(scale=0.05)}
+            rows.append({"cd_cvm": f, "q": q, "x1": x1, "x2": x2, "t_to_event": t, **ratios,
                          "event": int(ev_date is not None and t <= 3), "y12": int(ev_date is not None and t <= 12),
                          "cancel_date": pd.NaT})
     return pd.DataFrame(rows)
