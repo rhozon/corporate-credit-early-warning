@@ -1,0 +1,16 @@
+{
+ "n": 1422,
+ "survival": 84,
+ "survival_and_text": 3,
+ "survival_and_llm": 1,
+ "llm": 60,
+ "llm_and_out_of_time": 4,
+ "text": 173,
+ "brazil": 58,
+ "brazil_survival": 1,
+ "brazil_deep": 0,
+ "brazil_text": 5,
+ "brazil_llm": 0,
+ "out_of_time": 32,
+ "deep_and_survival": 9
+}
