@@ -1,0 +1,15 @@
+{
+  "primary": {
+    "model": "google/gemma-4-26b-a4b-it",
+    "usd_per_token_in": 0.0,
+    "usd_per_token_out": 0.0
+  },
+  "secondary": {
+    "model": "google/gemma-4-31b-it",
+    "usd_per_token_in": 0.0,
+    "usd_per_token_out": 0.0
+  },
+  "temperature": 0,
+  "batch": 40,
+  "secondary_sample": 3000
+}
