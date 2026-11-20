@@ -119,6 +119,34 @@ def test_google_models_pick_the_google_transport(tmp_path):
     assert LLM("qwen/qwen3", cache_dir=tmp_path).transport is llm_client._http
 
 
+def test_transient_write_failure_is_retried(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    real = Path.write_text
+    state = {"n": 0}
+
+    def flaky(self, *a, **k):
+        if self.suffix == ".part" and state["n"] == 0:
+            state["n"] += 1
+            raise PermissionError("locked by sync client")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "write_text", flaky)
+    assert make(tmp_path, Transport()).complete("s", "u") == '{"ok": true}'
+    assert state["n"] == 1
+
+
+def test_cache_pack_round_trip(tmp_path):
+    src, dst, pack = tmp_path / "a", tmp_path / "b", tmp_path / "answers.jsonl.gz"
+    llm = make(src, Transport())
+    llm.complete("s", "u1")
+    llm.complete("s", "u2")
+    assert llm_client.pack_cache(src, pack) == 2
+    assert llm_client.unpack_cache(pack, dst) == 2
+    t = Transport()
+    assert make(dst, t).complete("s", "u1") == '{"ok": true}' and t.calls == []
+
+
 def test_invalid_json_under_schema_raises(tmp_path):
     llm = make(tmp_path, Transport(content="not json"))
     with pytest.raises(ValueError):

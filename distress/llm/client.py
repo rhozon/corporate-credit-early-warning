@@ -17,7 +17,10 @@ from pathlib import Path
 from typing import Callable
 
 URL = "https://openrouter.ai/api/v1/chat/completions"
-CACHE = Path(__file__).resolve().parents[2] / "cache" / "llm"
+# The live cache sits outside any synced folder (sync clients lock files mid-write).
+# The repository ships it packed in one file: see ``pack_cache`` and ``unpack_cache``.
+CACHE = Path(os.environ.get("DISTRESS_LLM_CACHE", Path.home() / ".cache" / "distress" / "llm"))
+PACKED = Path(__file__).resolve().parents[2] / "cache" / "llm_answers.jsonl.gz"
 _LOCKS: dict[str, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
 
@@ -43,16 +46,53 @@ def _replace(src: Path, dst: Path, tries: int = 20) -> None:
             time.sleep(0.02 * (i + 1))
 
 
-def _atomic_write(path: Path, text: str) -> None:
+def _atomic_write(path: Path, text: str, tries: int = 10) -> None:
     """Write next to the target and rename, so a crash never leaves a half file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     part = path.with_suffix(".json.part")
-    part.write_text(text, encoding="utf-8")
+    for i in range(tries):
+        try:
+            part.write_text(text, encoding="utf-8")
+            break
+        except OSError:
+            if i == tries - 1:
+                raise
+            time.sleep(0.05 * (i + 1))
     try:
         _replace(part, path)
     except Exception:
         part.unlink(missing_ok=True)
         raise
+
+
+def pack_cache(cache_dir: Path, out: Path) -> int:
+    """All cached answers in one gzipped JSON-lines file, keyed by their hash."""
+    import gzip
+
+    n = 0
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(out, "wt", encoding="utf-8") as f:
+        for p in sorted(Path(cache_dir).rglob("*.json")):
+            if p.name == "ledger.json":
+                continue
+            f.write(json.dumps({"key": p.stem, **json.loads(p.read_text(encoding="utf-8"))}, ensure_ascii=False) + "\n")
+            n += 1
+    return n
+
+
+def unpack_cache(packed: Path, cache_dir: Path) -> int:
+    import gzip
+
+    n = 0
+    with gzip.open(packed, "rt", encoding="utf-8") as f:
+        for line in f:
+            rec = json.loads(line)
+            key = rec.pop("key")
+            path = Path(cache_dir) / key[:2] / f"{key}.json"
+            if not path.exists():
+                _atomic_write(path, json.dumps(rec, ensure_ascii=False))
+                n += 1
+    return n
 
 
 def _http(payload: dict, timeout: int = 120, tries: int = 4) -> dict:

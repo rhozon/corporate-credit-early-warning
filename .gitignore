@@ -6,3 +6,4 @@ data/raw/
 *.tmp
 *.json.part
 data/pit.parquet
+cache/llm/
