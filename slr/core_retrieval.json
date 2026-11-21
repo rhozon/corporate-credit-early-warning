@@ -1,0 +1,14 @@
+{
+  "tried": 174,
+  "full_text": 101,
+  "core": 60,
+  "read_ok": 60,
+  "by_stratum": {
+    "general": 11,
+    "survival": 10,
+    "deep_learning": 10,
+    "text_llm": 10,
+    "brazil": 10,
+    "out_of_time": 9
+  }
+}

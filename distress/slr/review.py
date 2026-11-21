@@ -292,7 +292,8 @@ def gap_counts(ex: pd.DataFrame) -> dict:
     br = ex["country"].astype(str).str.contains("brazil|brasil", case=False)
     oot = ex["validation"] == "out_of_time"
     c = lambda m: int(m.sum())  # noqa: E731
-    return {"n": int(len(ex)), "survival": c(surv), "survival_and_text": c(surv & txt), "survival_and_llm": c(surv & llm),
+    coded = ex["abstract"].fillna("").str.len() >= 50 if "abstract" in ex else pd.Series(True, index=ex.index)
+    return {"n": int(len(ex)), "n_with_abstract": c(coded), "survival": c(surv), "survival_and_text": c(surv & txt), "survival_and_llm": c(surv & llm),
             "llm": c(llm), "llm_and_out_of_time": c(llm & oot), "text": c(txt), "brazil": c(br),
             "brazil_survival": c(br & surv), "brazil_deep": c(br & dl), "brazil_text": c(br & txt),
             "brazil_llm": c(br & llm), "out_of_time": c(oot), "validation_unclear": c(ex["validation"] == "unclear"),

@@ -185,3 +185,11 @@ def test_gap_counts_cross_families_country_and_validation():
     assert g["text"] == 2 and g["llm"] == 2 and g["survival_and_llm"] == 1 and g["survival_and_text"] == 1
     assert g["brazil"] == 2 and g["brazil_survival"] == 1 and g["brazil_deep"] == 1 and g["brazil_llm"] == 0
     assert g["out_of_time"] == 1 and g["validation_unclear"] == 2 and g["llm_and_out_of_time"] == 0
+
+
+def test_gap_counts_report_how_many_records_could_be_coded():
+    ex = pd.DataFrame({"families": [["survival"], []], "country": ["Brazil", "unclear"],
+                       "validation": ["unclear", "unclear"], "uses_text": [False, False], "uses_llm": [False, False],
+                       "abstract": ["We model the time to default of listed firms with hazard models. " * 2, ""]})
+    g = review.gap_counts(ex)
+    assert g["n"] == 2 and g["n_with_abstract"] == 1

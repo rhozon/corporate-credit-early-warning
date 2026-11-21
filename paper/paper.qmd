@@ -194,16 +194,32 @@ print(
     f"Brazilian data, {fmt(G['brazil_survival'])} uses a survival model, {fmt(G['brazil_deep'])} deep "
     f"learning and {fmt(G['brazil_llm'])} a language model. Only {fmt(G['out_of_time'])} abstracts "
     f"state an out-of-time test, and {fmt(G['validation_unclear'])} do not say how the models were "
-    f"validated."
+    f"validated. The source gives no abstract for {fmt(G['n'] - G['n_with_abstract'])} of the included "
+    f"records, which were coded from the title alone, so every count here is a lower bound."
 )
 ```
 
-The last figure is the strongest finding of the review and needs care: an abstract that does not
-describe the validation design does not prove the study lacked one. The full-text core gives a
-better estimate (@tbl-core). Even so, the pattern supports the three gaps of the introduction.
-Comparisons of model families rarely share one out-of-time test, survival models remain a small
-part of a field dominated by classification, and the Brazilian literature has not yet used
-survival, deep learning or language models on listed firms.
+```{python}
+#| output: asis
+core_path = Path.cwd().parent / "slr" / "core_extraction.parquet"
+ce = pd.read_parquet(core_path) if core_path.exists() else None
+if ce is not None:
+    ok = ce[ce["ft_read_ok"]]
+    print(
+        f"An abstract that does not describe the validation design does not prove the study lacked one, so "
+        f"the full-text core is the better estimate (@tbl-core). It is not reassuring. Of the {fmt(len(ok))} "
+        f"studies read in full, {fmt((ok['ft_validation'] == 'unclear').sum())} still do not say how the test "
+        f"set was formed, {fmt((ok['ft_validation'] == 'out_of_time').sum())} test on a later period (and the "
+        f"core over-samples them by design), {fmt(int(ok['ft_calibration_reported'].sum()))} report any measure "
+        f"of calibration and {fmt(int(ok['ft_horizon_months'].notna().sum()))} state the prediction horizon. "
+        f"The pattern supports the three gaps of the introduction: comparisons of model families rarely share "
+        f"one out-of-time test, survival models remain a small part of a field dominated by classification, "
+        f"calibration, which expected-loss provisioning depends on, is seldom checked, and the Brazilian "
+        f"literature has not yet used survival, deep learning or language models on listed firms."
+    )
+else:
+    print(fmt(None))
+```
 
 ```{python}
 #| output: asis
