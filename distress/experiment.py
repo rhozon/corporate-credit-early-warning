@@ -11,6 +11,7 @@ import pandas as pd
 
 from . import evaluate, stats
 from .models import MODELS
+from .llm.signals import FEATURE_CATEGORIES
 from .models.base import surv_target
 
 ACCOUNTING = ["wc_ta", "re_ta", "ebit_ta", "eq_tl", "lev", "curr", "cash_ta", "int_cov", "margin", "sales_g",
@@ -51,5 +52,92 @@ def run(train: pd.DataFrame, test: pd.DataFrame, features: list[str], models: li
         rows.append(row)
         preds.append(pd.DataFrame({"model": name, "cd_cvm": test["cd_cvm"].values, "q": test["q"].values,
                                    "y12": test["y12"].values, "complete": complete, "risk": risk,
+                                   "dur": d_te, "evt": e_te,
                                    **{c: pdc[c].values for c in ("pd12", "pd24", "pd36")}}))
     return pd.DataFrame(rows), pd.concat(preds, ignore_index=True)
+
+
+REFERENCES = ("altman", "logit_hazard")
+# Treated arm of H2, fixed before the test was opened: 12-month counts of each distress category read from
+# material facts, and of any category. The company's own recovery announcements are never a feature.
+SIGNALS = [f"sig_{c}_12m" for c in FEATURE_CATEGORIES] + ["sig_any_12m"]
+PRIMARY_MODEL = "logit_hazard"
+
+
+def ablation_table(base: pd.DataFrame, signals: pd.DataFrame) -> pd.DataFrame:
+    """Each model with and without the signals (one-sided DeLong, signals better). The primary model's
+    row is the pre-registered test; Holm's correction covers the other, secondary, rows."""
+    rows = []
+    for m, g in base[base["complete"]].groupby("model", sort=False):
+        s = signals[(signals["model"] == m) & signals["complete"]]
+        diff, z, p = stats.delong(g["y12"].values, s["pd12"].values, g["pd12"].values)
+        rows.append({"model": m, "role": "primary" if m == PRIMARY_MODEL else "secondary",
+                     "auc_base": evaluate.metrics(g["y12"].values, g["pd12"].values)["auc"],
+                     "auc_signals": evaluate.metrics(s["y12"].values, s["pd12"].values)["auc"],
+                     "auc_diff": diff, "z": z, "p": p})
+    out = pd.DataFrame(rows)
+    sec = out["role"] == "secondary"
+    out["p_holm"] = np.nan
+    if sec.any():
+        out.loc[sec, "p_holm"] = stats.holm(out.loc[sec, "p"])
+    return out
+
+
+def delong_table(preds: pd.DataFrame, references=REFERENCES) -> pd.DataFrame:
+    """Each model against each reference on the 12-month PD (one-sided: model better), Holm-adjusted.
+
+    These are the secondary comparisons of H1; the rows of every model are the same test rows.
+    """
+    ok = preds[preds["complete"]]
+    by = {m: g for m, g in ok.groupby("model", sort=False)}
+    rows = []
+    for m, g in by.items():
+        if m in references:
+            continue
+        for ref in references:
+            if ref not in by:
+                continue
+            diff, z, p = stats.delong(g["y12"].values, g["pd12"].values, by[ref]["pd12"].values)
+            rows.append({"model": m, "versus": ref, "auc_diff": diff, "z": z, "p": p})
+    out = pd.DataFrame(rows)
+    if len(out):
+        out["p_holm"] = stats.holm(out["p"])
+    return out
+
+
+def h2_test(train: pd.DataFrame, test: pd.DataFrame, base: list[str], signals: list[str], fit_end: pd.Timestamp,
+            eval_end: pd.Timestamp, model: str = "logit_hazard", seed: int = 2026) -> dict:
+    """Pre-registered primary test of H2: the discrete-time hazard logit with and without the language-model
+    signals, AUC of the 12-month PD on the out-of-time rows, one-sided DeLong test (signals better)."""
+    complete = (pd.to_datetime(test["q"]) + pd.DateOffset(months=12) <= eval_end).values
+    y = test["y12"].values[complete]
+    pds = {}
+    for arm, feats in (("base", base), ("signals", base + signals)):
+        m = MODELS[model](features=feats, seed=seed, fast=False).fit(train, horizon_end=fit_end)
+        pds[arm] = m.pd(test)["pd12"].values[complete]
+    diff, z, p = stats.delong(y, pds["signals"], pds["base"])
+    return {"model": model, "n": int(complete.sum()), "events": int(y.sum()),
+            "auc_base": evaluate.metrics(y, pds["base"])["auc"],
+            "auc_signals": evaluate.metrics(y, pds["signals"])["auc"],
+            "auc_diff": diff, "z": z, "p_one_sided": p, "signals": list(signals)}
+
+
+def calibration_by_horizon(preds: pd.DataFrame, horizons=(12, 24, 36)) -> pd.DataFrame:
+    """Observed default rate against the mean PD at each horizon (H3), on rows whose window is observed:
+    the firm defaulted within the horizon or was followed for at least that long."""
+    rows = []
+    for m, g in preds.groupby("model", sort=False):
+        for h in horizons:
+            dur, evt = g["dur"].values, g["evt"].values
+            valid = ((evt == 1) & (dur <= h)) | (dur >= h)
+            y = ((evt == 1) & (dur <= h)).astype(int)[valid]
+            p = g[f"pd{h}"].values[valid]
+            row = {"model": m, "horizon": h, "n": int(valid.sum()), "events": int(y.sum()),
+                   "observed": float(y.mean()) if len(y) else np.nan, "mean_pd": float(p.mean()) if len(p) else np.nan}
+            try:
+                met = evaluate.metrics(y, p)
+                row.update({k: met[k] for k in ("brier", "calib_intercept", "calib_slope")})
+            except Exception:
+                row.update({"brier": np.nan, "calib_intercept": np.nan, "calib_slope": np.nan})
+            rows.append(row)
+    return pd.DataFrame(rows)

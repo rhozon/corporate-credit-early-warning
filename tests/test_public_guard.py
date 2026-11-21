@@ -28,6 +28,15 @@ def test_firms_with_an_event_are_not_in_the_solvent_list():
     assert "CIA" not in names  # generic words are not names
 
 
+def test_one_word_names_count_only_as_proper_nouns_and_dictionary_words_are_listed():
+    cad = pd.DataFrame({"cd_cvm": [1, 2], "name": ["CAMBUCI SA", "VALE S.A."], "trade_name": ["PENALTY", "VALE"]})
+    names = public.solvent_names(cad, event_firms=set())
+    assert public.leaks("an L2 penalty chosen by the probability of default", names) == []
+    assert public.leaks("o vale do rio teve 3% de queda", names) == []
+    assert public.leaks("Vale: PD 2%", names)
+    assert "PENALTY" in public.COMMON_WORDS
+
+
 def test_trade_names_are_guarded_too():
     cad = pd.DataFrame({"cd_cvm": [9], "name": ["PETRÓLEO BRASILEIRO S.A. PETROBRAS"], "trade_name": ["PETROBRAS"]})
     assert public.leaks("Petrobras: PD 2%", public.solvent_names(cad, event_firms=set()))
@@ -36,8 +45,15 @@ def test_trade_names_are_guarded_too():
 def test_tables_with_a_company_name_and_a_risk_column_are_caught():
     assert public.table_leaks(pd.DataFrame({"empresa": ["X"], "pd12": [0.1]}))
     assert public.table_leaks(pd.DataFrame({"name": ["X"], "risk_score": [3]}))
-    assert not public.table_leaks(pd.DataFrame({"cd_cvm": [1], "pd12": [0.1]}))
     assert not public.table_leaks(pd.DataFrame({"name": ["X"], "event_date": ["2020-01-01"]}))
+
+
+def test_registry_codes_count_as_names_because_the_registry_is_public():
+    assert public.table_leaks(pd.DataFrame({"cd_cvm": [1], "pd12": [0.1]}))
+    assert public.table_leaks(pd.DataFrame({"cd_cvm": [1], "z2": [1.2]}))
+    assert public.table_leaks(pd.DataFrame({"cnpj": ["1"], "sig_any_12m": [3]}))
+    assert public.table_leaks(pd.DataFrame({"cd_cvm": [1], "going_concern": [1], "covenant": [0]}))
+    assert not public.table_leaks(pd.DataFrame({"cd_cvm": [1], "lev": [0.5], "curr": [1.2]}))
 
 
 def _public_files():

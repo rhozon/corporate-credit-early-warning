@@ -47,13 +47,10 @@ def load() -> dict:
     n["signals_kappa"] = _json("results/llm_agreement.json")
     n["subject_loss"] = _json("results/subject_vs_fulltext.json")
     n["llm_models"] = _json("results/llm_models.json")
-    sig = ROOT / "data" / "signals_primary.parquet"
-    if sig.exists():
-        s = pd.read_parquet(sig)
-        cats = [c for c in s.columns if c not in ("cd_cvm", "delivered", "none", "doc_id")]
-        n["signal_docs"] = len(s)
-        n["signal_any"] = int((s[cats].sum(axis=1) > 0).sum())
-        n["signal_counts"] = {c: int(s[c].sum()) for c in cats}
+    # Document-level labels are private (they read as alerts on named firms); the counts are public.
+    counts = _json("results/signal_counts.json") or {}
+    n["signal_docs"], n["signal_any"] = counts.get("documents"), counts.get("any_signal")
+    n["signal_counts"] = counts.get("by_category")
     n["validation"] = pd.read_csv(ROOT / "results" / "validation_base.csv") \
         if (ROOT / "results" / "validation_base.csv").exists() else None
     for name in ("test_h1", "test_delong", "test_h3"):

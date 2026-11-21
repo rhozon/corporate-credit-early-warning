@@ -12,3 +12,4 @@ paper/*.pdf
 paper/*.tex
 paper/*_files/
 paper/.quarto/
+data/private/

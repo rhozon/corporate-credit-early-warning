@@ -1,0 +1,37 @@
+{
+  "documents": 30990,
+  "any_signal": 7181,
+  "any_feature_signal": 6532,
+  "by_category": {
+    "debt_restructuring": 793,
+    "covenant": 73,
+    "missed_payment": 46,
+    "asset_sale_liquidity": 2070,
+    "emergency_capital": 917,
+    "going_concern": 99,
+    "ceo_cfo_change": 1345,
+    "rating_downgrade": 93,
+    "own_recovery": 779,
+    "subsidiary_recovery": 96,
+    "sanction": 1083
+  },
+  "by_year": {
+    "2010": 1058,
+    "2011": 1044,
+    "2012": 1048,
+    "2013": 1079,
+    "2014": 1326,
+    "2015": 1447,
+    "2016": 1454,
+    "2017": 1811,
+    "2018": 1879,
+    "2019": 1890,
+    "2020": 2470,
+    "2021": 2855,
+    "2022": 2310,
+    "2023": 2282,
+    "2024": 2511,
+    "2025": 2541,
+    "2026": 1985
+  }
+}

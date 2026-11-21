@@ -15,6 +15,8 @@ from .llm.client import LLM
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
+# Per-firm outputs that read as risk signals (labels, predictions) stay out of the repository.
+PRIVATE = DATA / "private"
 # Event adjudication ran on Qwen3 via OpenRouter; signals and screening run on Gemma 4 (open weights) via
 # Google AI Studio, free tier.
 EVENTS_MODEL = ("qwen/qwen3-235b-a22b-2507", 1.4e-7, 8e-7)
@@ -85,7 +87,6 @@ def cmd_panel(a):
     r = pd.merge_asof(r.sort_values("as_of"), gc[["cd_cvm", "dt_receb", "gc_flag"]],
                       left_on="as_of", right_on="dt_receb", by="cd_cvm", direction="backward")
     r["gc_flag"] = r["gc_flag"].fillna(False).astype(int)
-    r["z2"] = features.altman_z2(r)
     r = r.drop(columns=["dt_receb"])
     r.to_parquet(DATA / "features.parquet", index=False)
 
@@ -118,11 +119,11 @@ def cmd_signals(a):
         model = llm(which, max_tokens=3000)
         cl = signals.classify_subjects(docs, model, batch=40, workers=a.workers)
         cl.index = docs.index
-        cl.to_parquet(DATA / f"signals_{tag}.parquet")
+        cl.to_parquet(PRIVATE / f"signals_{tag}.parquet")
         out[tag] = cl
         print(tag, "done:", len(cl), "documents")
-    if "primary" not in out and (DATA / "signals_primary.parquet").exists():
-        out["primary"] = pd.read_parquet(DATA / "signals_primary.parquet")
+    if "primary" not in out and (PRIVATE / "signals_primary.parquet").exists():
+        out["primary"] = pd.read_parquet(PRIVATE / "signals_primary.parquet")
     (ROOT / "results").mkdir(exist_ok=True)
     (ROOT / "results" / "llm_models.json").write_text(json.dumps(
         {"primary": {"model": PRIMARY[0], "usd_per_token_in": PRIMARY[1], "usd_per_token_out": PRIMARY[2]},
@@ -254,7 +255,7 @@ def cmd_fulltext_sample(a):
            "kappa": signals.agreement(subj[ok], full[ok]), "loss": loss}
     (ROOT / "results").mkdir(exist_ok=True)
     (ROOT / "results" / "subject_vs_fulltext.json").write_text(json.dumps(res, indent=2, default=float))
-    full.assign(doc_id=sample["doc_id"].values).to_parquet(DATA / "signals_fulltext_sample.parquet", index=False)
+    full.assign(doc_id=sample["doc_id"].values).to_parquet(PRIVATE / "signals_fulltext_sample.parquet", index=False)
     print({k: res[k] for k in ("sample", "read")}, "any:", loss["any"])
 
 
@@ -299,7 +300,48 @@ def cmd_validate(a):
     print(res[cols].round(3).to_string(index=False))
 
 
+def cmd_test(a):
+    """Opens the out-of-time test: H1 (all models), H2 (pre-registered primary test and ablations), H3.
+
+    Refuses to run on the draft event list: the test is opened once, after the author's review.
+    Firm-level predictions are written to data/private only; results/ gets aggregates.
+    """
+    import json
+
+    from . import experiment, panel as panel_mod
+    from .llm import signals
+    from .models import MODELS
+
+    if not (DATA / "events_reviewed.csv").exists():
+        raise SystemExit("data/events_reviewed.csv is missing: the test stays closed until the event review.")
+    out = ROOT / "results"
+    out.mkdir(exist_ok=True)
+    p = pd.read_parquet(DATA / "panel.parquet")
+    p = p.join(signals.signal_features(pd.read_parquet(PRIVATE / "signals_primary.parquet"), p))
+    train, test = panel_mod.split(p, data_end=pd.Timestamp(a.data_end))
+    fit_end, eval_end = pd.Timestamp("2019-12-31"), pd.Timestamp(a.data_end)
+    print(f"train rows {len(train)} events {int(train['event'].sum())}; "
+          f"test rows {len(test)} events {int(test['event'].sum())}")
+
+    res, preds = experiment.run(train, test, experiment.BASE, list(MODELS), fit_end, eval_end,
+                                bootstrap=a.bootstrap)
+    res.to_csv(out / "test_h1.csv", index=False)
+    preds.to_parquet(PRIVATE / "test_preds.parquet", index=False)
+    experiment.delong_table(preds).to_csv(out / "test_delong.csv", index=False)
+    experiment.calibration_by_horizon(preds).to_csv(out / "test_h3.csv", index=False)
+
+    h2 = experiment.h2_test(train, test, experiment.BASE, experiment.SIGNALS, fit_end, eval_end)
+    (out / "test_h2.json").write_text(json.dumps(h2, indent=2, default=float))
+    res_s, preds_s = experiment.run(train, test, experiment.BASE + experiment.SIGNALS, list(MODELS), fit_end,
+                                    eval_end)
+    preds_s.to_parquet(PRIVATE / "test_preds_signals.parquet", index=False)
+    experiment.ablation_table(preds, preds_s).to_csv(out / "test_h2_ablation.csv", index=False)
+    print(res[["model", "auc", "auc_lo", "auc_hi", "c_uno", "ibs"]].round(3).to_string(index=False))
+    print("H2 primary:", {k: (round(v, 4) if isinstance(v, float) else v) for k, v in h2.items()})
+
+
 def main(argv=None):
+    PRIVATE.mkdir(parents=True, exist_ok=True)
     p = argparse.ArgumentParser(prog="distress")
     sub = p.add_subparsers(dest="cmd", required=True)
     e = sub.add_parser("events")
@@ -309,6 +351,10 @@ def main(argv=None):
     pn.add_argument("--end", default="2026-09-30")
     pn.add_argument("--data-end", default="2026-11-20")
     pn.set_defaults(fn=cmd_panel)
+    ts = sub.add_parser("test")
+    ts.add_argument("--data-end", default="2026-11-20")
+    ts.add_argument("--bootstrap", type=int, default=1000)
+    ts.set_defaults(fn=cmd_test)
     sg = sub.add_parser("signals")
     sg.add_argument("--workers", type=int, default=4)
     sg.add_argument("--secondary-sample", type=int, default=3000)
