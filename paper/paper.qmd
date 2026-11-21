@@ -229,7 +229,10 @@ if core_path.exists():
     ok = ce[ce["ft_read_ok"]]
     rows = []
     for s, g in ok.groupby("stratum"):
-        rows.append({"Stratum": s, "Studies": len(g),
+        rows.append({"Stratum": {"survival": "Survival models", "deep_learning": "Deep learning",
+                                 "text_llm": "Text and language models", "brazil": "Brazil",
+                                 "out_of_time": "Out-of-time validation", "general": "Most cited (fill)"}[s],
+                     "Studies": len(g),
                      "Out-of-time": int((g["ft_validation"] == "out_of_time").sum()),
                      "Calibration reported": int(g["ft_calibration_reported"].sum()),
                      "Uses text": int(g["ft_uses_text"].sum()), "Uses LLM": int(g["ft_uses_llm"].sum())})
