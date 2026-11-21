@@ -57,7 +57,7 @@ def test_registry_codes_count_as_names_because_the_registry_is_public():
 
 
 def _public_files():
-    pats = ["README.md", "paper/*.qmd", "paper/*.md", "results/**/*.md", "results/**/*.json", "results/**/*.csv"]
+    pats = ["README.md", "PREREGISTRATION.md", "paper/*.qmd", "paper/*.md", "results/**/*.md", "results/**/*.json", "results/**/*.csv"]
     return [p for pat in pats for p in ROOT.glob(pat) if p.is_file()]
 
 

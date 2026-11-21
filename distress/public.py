@@ -22,7 +22,7 @@ DISTRESS_LABELS = set(CATEGORIES)
 
 # Registered trade names that are also ordinary words. A one-word name in this list is not taken as a
 # company mention; every entry is a dictionary word, added when it produced a false alarm.
-COMMON_WORDS = {"BASE", "BRAZILIAN", "CREDIT", "FRAME", "IMPORT", "PENALTY"}
+COMMON_WORDS = {"BANK", "BASE", "BRAZILIAN", "CREDIT", "FRAME", "IMPORT", "PENALTY"}
 
 
 def event_firms(data_dir: Path) -> set[int]:
