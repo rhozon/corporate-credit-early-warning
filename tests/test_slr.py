@@ -173,3 +173,15 @@ def test_extraction_accepts_families_written_as_text():
     out = review.parse_extract({"items": [{"i": 1, "families": "survival, ml_trees", "validation": "unclear"},
                                           {"i": 2, "families": "survival", "validation": "out_of_time"}]}, n=2)
     assert out[0]["families"] == ["survival", "ml_trees"] and out[1]["families"] == ["survival"]
+
+
+def test_gap_counts_cross_families_country_and_validation():
+    ex = pd.DataFrame({"families": [["survival", "deep_learning"], ["text_llm"], ["statistical"], ["survival"]],
+                       "country": ["Brazil", "USA", "Brasil", "China"],
+                       "validation": ["out_of_time", "unclear", "unclear", "holdout_random"],
+                       "uses_text": [False, True, False, True], "uses_llm": [False, True, False, True]})
+    g = review.gap_counts(ex)
+    assert g["n"] == 4 and g["survival"] == 2 and g["deep_and_survival"] == 1
+    assert g["text"] == 2 and g["llm"] == 2 and g["survival_and_llm"] == 1 and g["survival_and_text"] == 1
+    assert g["brazil"] == 2 and g["brazil_survival"] == 1 and g["brazil_deep"] == 1 and g["brazil_llm"] == 0
+    assert g["out_of_time"] == 1 and g["validation_unclear"] == 2 and g["llm_and_out_of_time"] == 0

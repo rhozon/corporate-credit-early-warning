@@ -282,6 +282,23 @@ def synthesis(ex: pd.DataFrame) -> dict:
             "n": int(len(ex))}
 
 
+def gap_counts(ex: pd.DataFrame) -> dict:
+    """The counts behind the gaps: model families crossed with text, language models, Brazil and validation."""
+    fam = ex["families"].map(lambda x: set(as_list(x)))
+    has = lambda f: fam.map(lambda s: f in s)  # noqa: E731
+    surv, dl = has("survival"), has("deep_learning")
+    txt = has("text_llm") | ex["uses_text"].astype(bool)
+    llm = ex["uses_llm"].astype(bool)
+    br = ex["country"].astype(str).str.contains("brazil|brasil", case=False)
+    oot = ex["validation"] == "out_of_time"
+    c = lambda m: int(m.sum())  # noqa: E731
+    return {"n": int(len(ex)), "survival": c(surv), "survival_and_text": c(surv & txt), "survival_and_llm": c(surv & llm),
+            "llm": c(llm), "llm_and_out_of_time": c(llm & oot), "text": c(txt), "brazil": c(br),
+            "brazil_survival": c(br & surv), "brazil_deep": c(br & dl), "brazil_text": c(br & txt),
+            "brazil_llm": c(br & llm), "out_of_time": c(oot), "validation_unclear": c(ex["validation"] == "unclear"),
+            "deep_and_survival": c(dl & surv)}
+
+
 def combine(a: pd.Series, b: pd.Series) -> pd.Series:
     """Inclusive rule (protocol amendment 2): a record either screener includes goes to full text."""
     return pd.Series(["include" if "include" in (x, y) else "exclude" for x, y in zip(a, b)], index=a.index)

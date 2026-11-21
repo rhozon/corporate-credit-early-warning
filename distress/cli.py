@@ -172,6 +172,7 @@ def cmd_slr(a):
         sel = recs[recs["openalex_id"].isin(ids)]
         ex = review.extract(llm(PRIMARY, max_tokens=4000), sel, batch=8, workers=a.workers)
         ex.to_parquet(review.SLR / "extraction.parquet", index=False)
+        (review.SLR / "gaps_counts.json").write_text(json.dumps(review.gap_counts(ex), indent=1))
         t = review.synthesis(ex)
         print({k: v for k, v in t.items() if k not in ("families", "validation")})
         print(t["families"].to_string())
