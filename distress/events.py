@@ -173,3 +173,46 @@ def review_sheet(ev: pd.DataFrame, path: Path) -> None:
     })
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     sheet.to_excel(path, index=False)
+
+
+def _yes(v) -> bool | None:
+    s = _plain(str(v if v is not None else "")).strip().lower() if not (isinstance(v, float) and pd.isna(v)) else ""
+    if s in ("s", "sim", "y", "yes"):
+        return True
+    if s in ("n", "nao", "no"):
+        return False
+    return None
+
+
+def apply_review(draft: pd.DataFrame, sheet: pd.DataFrame) -> pd.DataFrame:
+    """The author's review of the event list applied to the draft.
+
+    "S" confirms an event; "N" with a corrected date moves it; "N" without a date removes it (not an
+    event of the company). Events older than the sheet are kept unchanged. A blank answer stops the
+    process: a partly reviewed list does not open the test.
+    """
+    ans = sheet["confere (S/N)"].map(_yes)
+    if ans.isna().any():
+        raise ValueError(f"{int(ans.isna().sum())} row(s) of the review sheet have no S/N answer")
+    out = draft.copy()
+    out["review"], out["review_note"] = "not_in_sheet", ""
+    key = list(zip(out["cd_cvm"].astype(int), pd.to_datetime(out["event_date"]).dt.date, out["event_type"]))
+    pos = {k: i for i, k in enumerate(key)}
+    drop = []
+    for (_, r), ok in zip(sheet.iterrows(), ans):
+        k = (int(r["código CVM"]), pd.to_datetime(r["data"]).date(), r["tipo"])
+        if k not in pos:
+            raise ValueError(f"review row not found in the draft: {k}")
+        i = out.index[pos[k]]
+        note = r.get("observação")
+        out.at[i, "review_note"] = "" if note is None or (isinstance(note, float) and pd.isna(note)) else str(note)
+        fixed = r.get("data correta")
+        has_fix = fixed is not None and not (isinstance(fixed, float) and pd.isna(fixed)) and str(fixed).strip()
+        if ok:
+            out.at[i, "review"] = "confirmed"
+        elif has_fix:
+            out.at[i, "event_date"] = pd.to_datetime(fixed, dayfirst=True)
+            out.at[i, "review"] = "date_corrected"
+        else:
+            drop.append(i)
+    return out.drop(index=drop).sort_values(["cd_cvm", "event_date"]).reset_index(drop=True)

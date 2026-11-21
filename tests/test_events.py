@@ -145,3 +145,35 @@ def test_review_sheet_has_the_columns_rodrigo_fills(tmp_path):
     assert list(back.columns) == ["código CVM", "empresa", "data", "tipo", "evidência", "link",
                                   "confere (S/N)", "data correta", "observação"]
     assert back["empresa"].iloc[0] == "ACME SA"
+
+
+def review_inputs():
+    draft = pd.DataFrame({"cd_cvm": [1, 2, 3, 4], "name": ["A", "B", "C", "D"],
+                          "event_date": pd.to_datetime(["2005-03-01", "2016-06-20", "2019-02-10", "2023-01-19"]),
+                          "event_type": ["RJ", "RJ", "RE", "RJ"], "evidence": "x", "link": "y",
+                          "episode_end": pd.NaT, "n_prior_events": 0, "left_truncated": False})
+    sheet = pd.DataFrame({"código CVM": [2, 3, 4], "empresa": ["B", "C", "D"],
+                          "data": ["2016-06-20", "2019-02-10", "2023-01-19"], "tipo": ["RJ", "RE", "RJ"],
+                          "confere (S/N)": ["S", "n", "Não"], "data correta": ["", "", "12/01/2023"],
+                          "observação": ["", "cliente, não a própria", "data do pedido"]})
+    return draft, sheet
+
+
+def test_review_confirms_corrects_and_drops_events():
+    from distress.events import apply_review
+
+    draft, sheet = review_inputs()
+    out = apply_review(draft, sheet).set_index("cd_cvm")
+    assert list(out.index) == [1, 2, 4]                       # C dropped; A (before the sheet) kept as is
+    assert out.loc[4, "event_date"] == pd.Timestamp("2023-01-12") and out.loc[4, "review"] == "date_corrected"
+    assert out.loc[2, "review"] == "confirmed" and out.loc[1, "review"] == "not_in_sheet"
+    assert out.loc[4, "review_note"] == "data do pedido"
+
+
+def test_review_with_blank_answers_is_refused():
+    from distress.events import apply_review
+
+    draft, sheet = review_inputs()
+    sheet.loc[0, "confere (S/N)"] = ""
+    with pytest.raises(ValueError, match="1 row"):
+        apply_review(draft, sheet)

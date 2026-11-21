@@ -300,6 +300,14 @@ def cmd_validate(a):
     print(res[cols].round(3).to_string(index=False))
 
 
+def cmd_apply_review(a):
+    """The author's answers in the review sheet, applied to the draft event list."""
+    draft = pd.read_csv(DATA / "events_draft.csv", parse_dates=["event_date", "episode_end"])
+    reviewed = events.apply_review(draft, pd.read_excel(a.sheet))
+    reviewed.to_csv(DATA / "events_reviewed.csv", index=False)
+    print(reviewed["review"].value_counts().to_dict(), "| removed:", len(draft) - len(reviewed))
+
+
 def cmd_test(a):
     """Opens the out-of-time test: H1 (all models), H2 (pre-registered primary test and ablations), H3.
 
@@ -371,6 +379,9 @@ def main(argv=None):
     pn.add_argument("--end", default="2026-09-30")
     pn.add_argument("--data-end", default="2026-11-20")
     pn.set_defaults(fn=cmd_panel)
+    ar = sub.add_parser("apply-review")
+    ar.add_argument("sheet")
+    ar.set_defaults(fn=cmd_apply_review)
     ts = sub.add_parser("test")
     ts.add_argument("--data-end", default="2026-11-20")
     ts.add_argument("--bootstrap", type=int, default=1000)
