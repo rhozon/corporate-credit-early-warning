@@ -189,6 +189,7 @@ def fetch_text(urls, cache_dir: Path, key: str, get=None) -> str | None:
     for url in ([urls] if isinstance(urls, str) else list(urls)):
         try:
             text = re.sub(r"\s+", " ", _one(url, get)).strip()
+            text = text.encode("utf-8", "ignore").decode("utf-8")  # PDFs can carry broken glyphs
         except Exception:
             text = ""
         if looks_like_paper(text):

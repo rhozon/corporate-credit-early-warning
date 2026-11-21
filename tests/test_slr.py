@@ -95,6 +95,69 @@ def test_prisma_counts_add_up():
     assert c["included"] == c["screened"] - c["excluded_title_abstract"]
 
 
+def crossref_item(doi, title, family, year):
+    return {"DOI": doi, "title": [title], "author": [{"family": family, "given": "A"}],
+            "issued": {"date-parts": [[year]]}}
+
+
+def test_reference_resolves_only_on_author_year_and_title_match(monkeypatch):
+    hits = [crossref_item("10.1/wrong-author", "Forecasting bankruptcy more accurately: a simple hazard model",
+                          "Smith", 2001),
+            crossref_item("10.1/right", "Forecasting Bankruptcy More Accurately: A Simple Hazard Model",
+                          "Shumway", 2001)]
+    monkeypatch.setattr(review, "crossref_search", lambda q, rows=5: hits)
+    assert review.resolve_reference("Shumway", 2001, "Forecasting bankruptcy more accurately") == "10.1/right"
+    assert review.resolve_reference("Shumway", 1995, "Forecasting bankruptcy more accurately") is None
+    assert review.resolve_reference("Shumway", 2001, "Deep learning for credit scoring in China") is None
+
+
+def test_journal_version_is_preferred_over_a_preprint(monkeypatch):
+    pre = crossref_item("10.3386/w1", "Multi-period corporate default prediction with stochastic covariates",
+                        "Duffie", 2006) | {"type": "report"}
+    pub = crossref_item("10.1016/j.jfineco.1", "Multi-period corporate default prediction with stochastic covariates",
+                        "Duffie", 2007) | {"type": "journal-article"}
+    monkeypatch.setattr(review, "crossref_search", lambda q, rows=10: [pre, pub])
+    assert review.resolve_reference("Duffie", 2007, "Multi-period corporate default prediction") == "10.1016/j.jfineco.1"
+
+
+def test_subtitle_and_group_author_do_not_block_a_match(monkeypatch):
+    xgb = crossref_item("10.1145/x", "XGBoost", "Chen", 2016) | {"subtitle": ["A Scalable Tree Boosting System"]}
+    cal = {"DOI": "10.1186/c", "title": ["Calibration: the Achilles heel of predictive analytics"],
+           "author": [{"name": "Topic Group of the STRATOS initiative"}, {"family": "Van Calster", "given": "B"}],
+           "issued": {"date-parts": [[2019]]}}
+    monkeypatch.setattr(review, "crossref_search", lambda q, rows=10: [xgb, cal])
+    assert review.resolve_reference("Chen", 2016, "XGBoost: a scalable tree boosting system") == "10.1145/x"
+    assert review.resolve_reference("Van Calster", 2019, "Calibration: the Achilles heel") == "10.1186/c"
+
+
+def test_a_suggested_doi_is_accepted_only_if_its_record_matches(monkeypatch):
+    rec = crossref_item("10.1136/bmj.n71", "The PRISMA 2020 statement: an updated guideline for reporting "
+                        "systematic reviews", "Page", 2021)
+    monkeypatch.setattr(review, "verify_doi", lambda doi: rec if doi == "10.1136/bmj.n71" else None)
+    monkeypatch.setattr(review, "crossref_search", lambda q, rows=10: [])
+    assert review.resolve_reference("Page", 2021, "The PRISMA 2020 statement", doi="10.1136/BMJ.N71") == \
+        "10.1136/bmj.n71"
+    assert review.resolve_reference("Page", 2021, "Deep survival forests", doi="10.1136/bmj.n71") is None
+    assert review.resolve_reference("Page", 2021, "The PRISMA 2020 statement", doi="10.9/none") is None
+
+
+def test_author_match_ignores_accents_and_case(monkeypatch):
+    hits = [crossref_item("10.1/p", "Random survival forests", "Ishwaran", 2008)]
+    monkeypatch.setattr(review, "crossref_search", lambda q, rows=5: hits)
+    assert review.resolve_reference("ISHWARAN", 2008, "Random survival forests") == "10.1/p"
+    hits[0]["author"][0]["family"] = "Pölsterl"
+    hits[0]["title"] = ["scikit-survival"]
+    assert review.resolve_reference("Polsterl", 2008, "scikit-survival") == "10.1/p"
+
+
+def test_bibtex_uses_given_citation_keys(monkeypatch):
+    found = {"10.1/real": {"title": ["Real paper"], "author": [{"family": "Silva", "given": "Ana"}],
+                           "issued": {"date-parts": [[2019]]}, "container-title": ["J. Test"], "DOI": "10.1/real",
+                           "type": "journal-article"}}
+    monkeypatch.setattr(review, "verify_doi", lambda doi: found.get(doi))
+    assert review.bibtex(["10.1/real"], keys={"10.1/real": "silva2019"}).startswith("@article{silva2019,")
+
+
 def test_bibtex_contains_only_verified_records(monkeypatch):
     found = {"10.1/real": {"title": ["Real paper"], "author": [{"family": "Silva", "given": "Ana"}],
                            "issued": {"date-parts": [[2019]]}, "container-title": ["J. Test"], "DOI": "10.1/real",

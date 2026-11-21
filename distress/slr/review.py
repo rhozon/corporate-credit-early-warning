@@ -301,6 +301,50 @@ def verify_doi(doi: str) -> dict | None:
     return None
 
 
+def crossref_search(query: str, rows: int = 5) -> list[dict]:
+    import requests
+
+    for i in range(4):
+        r = requests.get("https://api.crossref.org/works", headers=UA, timeout=60,
+                         params={"query.bibliographic": query, "rows": rows})
+        if r.status_code in (429, 500, 502, 503) and i < 3:
+            time.sleep(5 * (i + 1))
+            continue
+        r.raise_for_status()
+        return r.json()["message"]["items"]
+    return []
+
+
+def _words(t: str) -> set[str]:
+    t = unicodedata.normalize("NFKD", t or "")
+    t = "".join(c for c in t if not unicodedata.combining(c)).lower()
+    return {w for w in re.findall(r"[a-z0-9]+", t) if len(w) > 2}
+
+
+def _matches(it: dict, author: str, year: int, title: str) -> bool:
+    """Surname among the first three authors (group authors come first in some records), year within
+    one (online-first dates), and at least 80% of the title's words in the record's title and subtitle."""
+    names = {_title_key(a.get("family", "")) for a in (it.get("author") or [])[:3]}
+    got_year = (it.get("issued", {}).get("date-parts") or [[None]])[0][0]
+    want = _words(title)
+    got = _words(" ".join((it.get("title") or [""])[:1] + (it.get("subtitle") or [])[:1]))
+    return (_title_key(author) in names and bool(got_year) and abs(int(got_year) - int(year)) <= 1
+            and bool(want) and len(want & got) / len(want) >= 0.8)
+
+
+def resolve_reference(author: str, year: int, title: str, doi: str | None = None) -> str | None:
+    """DOI of a cited work, accepted only when Crossref's record matches author, year and title.
+
+    With ``doi`` the suggested DOI is checked; otherwise Crossref's bibliographic search is used."""
+    if doi:
+        rec = verify_doi(doi.lower())
+        return rec["DOI"].lower() if rec and _matches(rec, author, year, title) else None
+    hits = [it for it in crossref_search(f"{author} {year} {title}", rows=10) if _matches(it, author, year, title)]
+    # The published version over a working paper or preprint of the same work.
+    hits.sort(key=lambda it: it.get("type") not in ("journal-article", "proceedings-article"))
+    return hits[0]["DOI"].lower() if hits else None
+
+
 def _bibkey(m: dict) -> str:
     fam = (m.get("author") or [{"family": "anon"}])[0].get("family", "anon")
     year = (m.get("issued", {}).get("date-parts") or [[0]])[0][0]
@@ -312,8 +356,8 @@ def _esc(s: str) -> str:
     return str(s).replace("&", r"\&").replace("%", r"\%").replace("_", r"\_").replace("#", r"\#")
 
 
-def bibtex(dois) -> str:
-    entries = []
+def bibtex(dois, keys: dict[str, str] | None = None) -> str:
+    entries, keys = [], keys or {}
     for doi in dois:
         m = verify_doi(doi)
         if not m:
@@ -326,5 +370,5 @@ def bibtex(dois) -> str:
                   "journal" if kind == "article" else "booktitle": (m.get("container-title") or [""])[0],
                   "volume": m.get("volume"), "number": m.get("issue"), "pages": m.get("page"), "doi": m.get("DOI")}
         body = ",\n".join(f"  {k} = {{{_esc(v)}}}" for k, v in fields.items() if v)
-        entries.append(f"@{kind}{{{_bibkey(m)},\n{body}\n}}")
+        entries.append(f"@{kind}{{{keys.get(doi) or _bibkey(m)},\n{body}\n}}")
     return "\n\n".join(entries) + ("\n" if entries else "")

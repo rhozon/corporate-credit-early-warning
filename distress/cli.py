@@ -231,6 +231,31 @@ def cmd_slr(a):
         print(stats)
 
 
+def cmd_refs(a):
+    """paper/references.bib from Crossref-verified DOIs only: the cited works in refs_seed.csv,
+    resolved by bibliographic search, and the studies of the review's full-text core."""
+    from .slr import review
+
+    paper = ROOT / "paper"
+    seed = pd.read_csv(paper / "refs_seed.csv")
+    done = paper / "refs_resolved.csv"
+    old = pd.read_csv(done).set_index("key")["doi"].dropna().to_dict() if done.exists() else {}
+    hint = seed["doi_hint"].where(seed["doi_hint"].notna(), None) if "doi_hint" in seed else [None] * len(seed)
+    seed["doi"] = [old.get(k) or review.resolve_reference(au, int(y), t, doi=h)
+                   for k, au, y, t, h in zip(seed["key"], seed["author"], seed["year"], seed["title"], hint)]
+    seed[["key", "author", "year", "title", "role", "doi"]].to_csv(done, index=False)
+    core = review.SLR / "core_list.csv"
+    core_dois = pd.read_csv(core)["doi"].dropna().str.lower().tolist() if core.exists() else []
+    keys = dict(zip(seed["doi"].dropna(), seed.loc[seed["doi"].notna(), "key"]))
+    dois = list(dict.fromkeys(seed["doi"].dropna().tolist() + core_dois))
+    bib = review.bibtex(dois, keys=keys)
+    extra = (paper / "references_extra.bib").read_text(encoding="utf-8")
+    (paper / "references.bib").write_text(bib + "\n" + extra, encoding="utf-8")
+    print({"seed": len(seed), "resolved": int(seed["doi"].notna().sum()), "core_dois": len(core_dois),
+           "bib_entries": bib.count("\n@") + bib.startswith("@")})
+    print("unresolved:", seed.loc[seed["doi"].isna(), "key"].tolist())
+
+
 def cmd_validate(a):
     """Development run inside the training years. The test period is not touched."""
     from . import experiment, panel as panel_mod
@@ -270,6 +295,8 @@ def main(argv=None):
     sl.add_argument("--per-stratum", type=int, default=10)
     sl.add_argument("--core-size", type=int, default=60)
     sl.set_defaults(fn=cmd_slr)
+    rf = sub.add_parser("refs")
+    rf.set_defaults(fn=cmd_refs)
     va = sub.add_parser("validate")
     va.add_argument("--data-end", default="2026-11-20")
     va.add_argument("--fast", action="store_true")

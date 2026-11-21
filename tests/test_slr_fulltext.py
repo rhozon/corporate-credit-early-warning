@@ -120,6 +120,14 @@ def test_next_url_is_tried_when_one_is_blocked(tmp_path):
     assert t and t.startswith("survival")
 
 
+def test_text_with_broken_characters_is_cached_without_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(ft, "_pdf_text", lambda b: "Introduction \ud835 bad glyph " + "x " * 9000 + "Results References")
+    get = Fake({"http://x/s.pdf": ("application/pdf", b"%PDF-fake")})
+    t = ft.fetch_text("http://x/s.pdf", tmp_path, "s", get=get)
+    assert t and "\ud835" not in t
+    assert ft.fetch_text("http://x/s.pdf", tmp_path, "s", get=get) == t
+
+
 def test_fulltext_parser_validates_vocabularies_and_types():
     good = {"country": "Brazil", "data": "CVM filings", "unit": "listed", "period": "2010-2020",
             "n_firms": "300", "n_events": 45, "methods": ["survival", "ml_trees"], "best_model": "XGBoost",
