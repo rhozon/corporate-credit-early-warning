@@ -347,7 +347,7 @@ def cmd_validate(a):
 def cmd_apply_review(a):
     """The author's answers in the review sheet, applied to the draft event list."""
     draft = pd.read_csv(DATA / "events_draft.csv", parse_dates=["event_date", "episode_end"])
-    reviewed = events.apply_review(draft, pd.read_excel(a.sheet))
+    reviewed = events.apply_review(draft, events.read_review(a.sheet))
     reviewed.to_csv(DATA / "events_reviewed.csv", index=False)
     print(reviewed["review"].value_counts().to_dict(), "| removed:", len(draft) - len(reviewed))
 

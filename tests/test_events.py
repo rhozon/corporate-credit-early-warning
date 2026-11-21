@@ -177,3 +177,36 @@ def test_review_with_blank_answers_is_refused():
     sheet.loc[0, "confere (S/N)"] = ""
     with pytest.raises(ValueError, match="1 row"):
         apply_review(draft, sheet)
+
+
+def _three_events():
+    names = ["ACME SA - EM RECUPERAÇÃO JUDICIAL", "MASSA FALIDA DE BETA SA", "GAMMA ENERGIA SA"]
+    return pd.DataFrame({"cd_cvm": [1, 2, 3], "name": names,
+                         "event_date": pd.to_datetime(["2016-06-20", "2013-01-09", "2019-12-17"]),
+                         "event_type": ["RJ", "FAL", "RJ"], "evidence": "x", "link": "http://x",
+                         "episode_end": pd.NaT, "n_prior_events": 0, "left_truncated": False})
+
+
+def test_review_sheet_puts_events_the_name_does_not_confirm_on_the_first_tab(tmp_path):
+    path = tmp_path / "eventos.xlsx"
+    events.review_sheet(_three_events(), path)
+    tabs = pd.read_excel(path, sheet_name=None)
+    assert list(tabs) == ["conferir com cuidado", "rápidas"]
+    assert tabs["conferir com cuidado"]["código CVM"].tolist() == [3]
+    assert tabs["rápidas"]["código CVM"].tolist() == [1, 2]
+
+
+def test_review_answers_are_read_from_every_tab(tmp_path):
+    from openpyxl import load_workbook
+
+    path = tmp_path / "eventos.xlsx"
+    ev = _three_events()
+    events.review_sheet(ev, path)
+    wb = load_workbook(path)
+    for ws in wb.worksheets:
+        col = [c.value for c in ws[1]].index("confere (S/N)") + 1
+        for row in range(2, ws.max_row + 1):
+            ws.cell(row=row, column=col, value="S")
+    wb.save(path)
+    out = events.apply_review(ev, events.read_review(path))
+    assert sorted(out["cd_cvm"]) == [1, 2, 3] and set(out["review"]) == {"confirmed"}

@@ -158,21 +158,58 @@ def non_financial(ev: pd.DataFrame, cad: pd.DataFrame) -> pd.DataFrame:
     return ev[~ev["cd_cvm"].map(sector).map(is_financial).fillna(False).astype(bool)]
 
 
+_NAME_SAYS = re.compile(r"recupera|falid|liquida")
+REVIEW_TABS = ("conferir com cuidado", "rápidas")
+
+
 def review_sheet(ev: pd.DataFrame, path: Path) -> None:
-    """Spreadsheet for the author to confirm each event and its date."""
+    """Spreadsheet for the author to confirm each event and its date.
+
+    Two tabs: events whose company name does not already say recovery, bankruptcy or liquidation
+    (where most errors are) come first; the rest, where usually only the date needs a look, second.
+    The S/N cell has a drop-down list and the link is clickable.
+    """
+    from openpyxl.styles import Font
+    from openpyxl.worksheet.datavalidation import DataValidation
+
     sheet = pd.DataFrame({
-        "código CVM": ev["cd_cvm"],
-        "empresa": ev["name"],
-        "data": pd.to_datetime(ev["event_date"]).dt.date,
-        "tipo": ev["event_type"],
-        "evidência": ev["evidence"],
-        "link": ev["link"],
+        "código CVM": ev["cd_cvm"].values,
+        "empresa": ev["name"].values,
+        "data": pd.to_datetime(ev["event_date"]).dt.date.values,
+        "tipo": ev["event_type"].values,
+        "evidência": ev["evidence"].values,
+        "link": ev["link"].values,
         "confere (S/N)": "",
         "data correta": "",
         "observação": "",
     })
+    says = sheet["empresa"].astype(str).map(lambda n: bool(_NAME_SAYS.search(_plain(n))))
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    sheet.to_excel(path, index=False)
+    widths = {"A": 11, "B": 48, "C": 11, "D": 6, "E": 48, "F": 12, "G": 13, "H": 13, "I": 40}
+    with pd.ExcelWriter(path, engine="openpyxl") as xw:
+        for tab, part in zip(REVIEW_TABS, (sheet[~says], sheet[says])):
+            part.to_excel(xw, sheet_name=tab, index=False)
+            ws = xw.sheets[tab]
+            ws.freeze_panes = "B2"
+            for col, w in widths.items():
+                ws.column_dimensions[col].width = w
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+            for row in range(2, ws.max_row + 1):
+                link = ws.cell(row=row, column=6)
+                if link.value:
+                    link.hyperlink, link.value, link.style = str(link.value), "abrir", "Hyperlink"
+                ws.cell(row=row, column=3).number_format = "DD/MM/YYYY"
+            dv = DataValidation(type="list", formula1='"S,N"', allow_blank=True)
+            ws.add_data_validation(dv)
+            if ws.max_row > 1:
+                dv.add(f"G2:G{ws.max_row}")
+
+
+def read_review(path: Path) -> pd.DataFrame:
+    """Every tab of the review sheet, as one table."""
+    tabs = pd.read_excel(path, sheet_name=None)
+    return pd.concat(tabs.values(), ignore_index=True)
 
 
 def _yes(v) -> bool | None:
