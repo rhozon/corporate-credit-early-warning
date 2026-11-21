@@ -373,8 +373,20 @@ if K:
 L = N["subject_loss"]
 if L:
     a = L["loss"]["any"]
+    lo = L["loss"]
+    ch = L["checks"]
     print(f" In the full-text sample ({fmt(L['read'])} documents read), the subject line finds "
-          f"{fmt(a['recall_of_subject'], 0, pct=True)} of the documents that carry a signal in the full text.")
+          f"{fmt(a['both'])} of the {fmt(a['full_text'])} documents that carry a signal in the full text "
+          f"({fmt(a['recall_of_subject'], 0, pct=True)}). The loss is uneven: asset sales "
+          f"({fmt(lo['asset_sale_liquidity']['both'])} of {fmt(lo['asset_sale_liquidity']['full_text'])}) and "
+          f"executive changes ({fmt(lo['ceo_cfo_change']['both'])} of {fmt(lo['ceo_cfo_change']['full_text'])}) "
+          f"are named in the subject, while debt renegotiations mostly are not "
+          f"({fmt(lo['debt_restructuring']['both'])} of {fmt(lo['debt_restructuring']['full_text'])}). Flags of the "
+          f"company's own recovery in the full text ({fmt(ch['own_recovery_full_text'])}) come almost all "
+          f"({fmt(ch['own_recovery_full_text_inside_open_episode'])}) from firms already in recovery, whose filings "
+          f"restate that status. Since the subject line keeps most of the signal, the panel uses subjects; the "
+          f"result for debt renegotiation is a limitation of H2 and the reason the monitor of Section 8 reads "
+          f"whole documents.")
 H2 = N["test_h2"]
 print("\n\n" + (f"Primary test: AUC {fmt(H2['auc_base'], 3)} without signals and {fmt(H2['auc_signals'], 3)} "
                 f"with them (one-sided DeLong p = {fmt(H2['p_one_sided'], 3)})." if H2 else fmt(None)))
