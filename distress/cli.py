@@ -99,6 +99,24 @@ def cmd_panel(a):
           f"(events {int(train['event'].sum())}), test rows {len(test)} (events {int(test['event'].sum())})")
 
 
+def write_agreement(primary: pd.DataFrame, secondary: pd.DataFrame) -> dict:
+    """Agreement of the two readers on the documents both read, written to results/."""
+    import json
+
+    from .llm import signals
+
+    table = signals.agreement_table(primary.loc[secondary.index], secondary)
+    (ROOT / "results").mkdir(exist_ok=True)
+    (ROOT / "results" / "llm_agreement.json").write_text(json.dumps(table, indent=2))
+    print("kappa:", {k: round(v["kappa"], 2) for k, v in table.items()})
+    return table
+
+
+def cmd_agreement(a):
+    write_agreement(pd.read_parquet(PRIVATE / "signals_primary.parquet"),
+                    pd.read_parquet(PRIVATE / "signals_secondary.parquet"))
+
+
 def cmd_signals(a):
     import json
 
@@ -130,9 +148,7 @@ def cmd_signals(a):
          "secondary": {"model": SECONDARY[0], "usd_per_token_in": SECONDARY[1], "usd_per_token_out": SECONDARY[2]},
          "temperature": 0, "batch": 40, "secondary_sample": a.secondary_sample}, indent=2))
     if len(out) == 2:
-        kappa = signals.agreement(out["primary"].loc[out["secondary"].index], out["secondary"])
-        (ROOT / "results" / "llm_agreement.json").write_text(json.dumps(kappa, indent=2))
-        print("kappa:", {k: round(v, 2) for k, v in kappa.items()})
+        write_agreement(out["primary"], out["secondary"])
     if a.sheet and "primary" in out:
         cl = out["primary"].assign(name=fr["name"], subject=fr["subject"], link=fr["link"])
         cl.reset_index(drop=False).rename(columns={"index": "doc_id"}).to_parquet(DATA / "raw" / "signals_primary_docs.parquet")
@@ -344,6 +360,11 @@ def cmd_test(a):
 
     h2 = experiment.h2_test(train, test, experiment.BASE, experiment.SIGNALS, fit_end, eval_end)
     (out / "test_h2.json").write_text(json.dumps(h2, indent=2, default=float))
+    # Secondary: only the categories the two readers agree on (amendment to the pre-registration).
+    agree = json.loads((out / "llm_agreement.json").read_text())
+    reliable = experiment.reliable_signals({c: v["kappa"] for c, v in agree.items()})
+    h2r = experiment.h2_test(train, test, experiment.BASE, reliable, fit_end, eval_end)
+    (out / "test_h2_reliable.json").write_text(json.dumps(h2r | {"signals": reliable}, indent=2, default=float))
     res_s, preds_s = experiment.run(train, test, experiment.BASE + experiment.SIGNALS, list(MODELS), fit_end,
                                     eval_end)
     preds_s.to_parquet(PRIVATE / "test_preds_signals.parquet", index=False)
@@ -393,6 +414,8 @@ def main(argv=None):
     sg.add_argument("--only", choices=["primary", "secondary"], default=None)
     sg.add_argument("--sheet", default=None)
     sg.set_defaults(fn=cmd_signals)
+    ag = sub.add_parser("agreement")
+    ag.set_defaults(fn=cmd_agreement)
     sl = sub.add_parser("slr")
     sl.add_argument("step", choices=["screen", "combine", "extract", "core"])
     sl.add_argument("--which", choices=["primary", "secondary"], default="primary")

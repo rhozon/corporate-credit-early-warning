@@ -53,6 +53,17 @@ def test_kappa_matches_hand_computation():
     assert signals.agreement(a, b)["covenant"] == pytest.approx((0.75 - 34 / 64) / (1 - 34 / 64))
 
 
+def test_agreement_table_reports_counts_next_to_kappa():
+    a = pd.DataFrame({"covenant": [1, 1, 0, 0, 1, 0, 0, 0], "sanction": [1, 0, 0, 0, 0, 0, 0, 0]})
+    b = pd.DataFrame({"covenant": [1, 0, 0, 0, 1, 0, 1, 0], "sanction": [0, 0, 0, 0, 0, 0, 0, 0]})
+    out = signals.agreement_table(a, b)
+    assert out["covenant"] == {"n": 8, "primary": 3, "secondary": 3, "both": 2, "agreement": 0.75,
+                               "kappa": pytest.approx((0.75 - 34 / 64) / (1 - 34 / 64))}
+    # one reader flags once, the other never: raw agreement is high, kappa is zero
+    assert out["sanction"]["agreement"] == 0.875
+    assert out["sanction"]["kappa"] == pytest.approx(0.0)
+
+
 def test_features_only_use_documents_before_the_quarter():
     cl = pd.DataFrame({"cd_cvm": [1, 1, 1], "delivered": pd.to_datetime(["2020-01-15", "2020-03-31", "2020-05-01"]),
                        **{c: [1, 1, 1] if c == "covenant" else [0, 0, 0] for c in signals.CATEGORIES}})

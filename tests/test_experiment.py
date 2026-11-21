@@ -112,3 +112,24 @@ def test_rolling_refit_trains_with_a_one_year_embargo_before_each_test_year():
     assert f.loc[2018, "train_last_q"] == pd.Timestamp("2016-12-31")
     assert f.loc[2018, "test_first_q"] == pd.Timestamp("2018-03-31")
     assert (res["auc"] > 0.6).all()
+
+
+def test_reliable_signals_keep_categories_the_two_readers_agree_on():
+    kappa = {c: 0.8 for c in experiment.FEATURE_CATEGORIES}
+    kappa |= {"going_concern": 0.0, "sanction": 0.51, "emergency_capital": 0.6, "own_recovery": 0.9}
+    out = experiment.reliable_signals(kappa, threshold=0.6)
+    assert "sig_going_concern_12m" not in out and "sig_sanction_12m" not in out
+    assert "sig_emergency_capital_12m" in out
+    assert "sig_own_recovery_12m" not in out  # never a predictor, whatever the agreement
+    assert "sig_any_12m" not in out  # the any-signal count mixes in the categories left out
+    assert set(out) < set(experiment.SIGNALS)
+
+
+def test_reliable_set_is_the_one_named_in_the_preregistration_amendment():
+    import json
+    from pathlib import Path
+
+    agree = json.loads((Path(__file__).parents[1] / "results" / "llm_agreement.json").read_text())
+    out = experiment.reliable_signals({c: v["kappa"] for c, v in agree.items()})
+    assert out == [f"sig_{c}_12m" for c in ("debt_restructuring", "covenant", "missed_payment", "asset_sale_liquidity",
+                                            "emergency_capital", "ceo_cfo_change", "rating_downgrade")]

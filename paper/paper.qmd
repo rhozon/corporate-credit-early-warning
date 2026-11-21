@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd()))
 sys.path.insert(0, str(Path.cwd().parent))
-from paper_numbers import N, fmt, table, event_date
+from paper_numbers import CATEGORY_NAMES, N, event_date, fmt, table
 ```
 
 # Abstract {.unnumbered}
@@ -352,9 +352,11 @@ print(
 ```
 
 Reliability is measured three ways. A second model reads a random subsample of 3,000 documents and
-agreement is reported as Cohen's kappa per category. The author labelled 150 documents, sampled by
-category and period, which give precision and recall against a human reading. And 200 documents
-drawn at random are read in full, to measure what the subject line misses.
+agreement is reported per category as Cohen's kappa [@cohen1960], next to the number of flags from
+each reader, since on a rare category a few extra flags move kappa a long way. The author labelled
+150 documents, sampled by category and period, which give precision and recall against a human
+reading. And 200 documents drawn at random are read in full, to measure what the subject line
+misses.
 
 ## Pre-registered test of H2
 
@@ -363,6 +365,12 @@ logit with and without the language-model signals, compared by the AUC of the 12
 out-of-time test, with a one-sided DeLong test at the 5% level. All other models, metrics and
 horizons are secondary and carry Holm's correction. The going-concern flag from the text rule
 stays in the baseline, so that the treated arm adds only what the language model reads.
+
+The second reader's labels came in after the registration and before the test was opened. They
+led to one amendment, committed with them: a secondary version of the H2 test in which the treated
+arm keeps only the categories where the two readers reach a kappa of 0.60, the lower edge of what
+@landis1977 call substantial agreement. The threshold was set after the agreement was seen; the
+primary test is unchanged.
 
 # Results
 
@@ -386,9 +394,18 @@ print(table(N["test_delong"]))
 #| output: asis
 K = N["signals_kappa"]
 if K:
-    vals = [v for v in K.values() if v == v]
-    print(f"Agreement between the two readers ranges from kappa {fmt(min(vals), 2)} to {fmt(max(vals), 2)} "
-          f"across categories.")
+    kap = {c: v["kappa"] for c, v in K.items() if v["kappa"] == v["kappa"]}
+    low = sorted((c for c in kap if kap[c] < 0.6), key=kap.get)
+    flags = [f"{CATEGORY_NAMES[c].lower()} ({fmt(K[c]['primary'])} against {fmt(K[c]['secondary'])})" for c in low]
+    flags = ", ".join(flags[:-1]) + " and " + flags[-1] if len(flags) > 1 else "".join(flags)
+    n_more = sum(v["primary"] > v["secondary"] for v in K.values())
+    print(f"On the {fmt(next(iter(K.values()))['n'])} subjects both models read, kappa ranges from "
+          f"{fmt(min(kap.values()), 2)} to {fmt(max(kap.values()), 2)} (@tbl-agreement). Raw agreement is at "
+          f"least {fmt(min(v['agreement'] for v in K.values()), 1, pct=True)} in every category, because most "
+          f"subjects carry no signal at all, so kappa is the informative figure. The first reader flags more "
+          f"often than the second in {fmt(n_more)} of the {fmt(len(K))} categories. Kappa falls below 0.60 in "
+          f"{fmt(len(low))}, each with many more flags from the first reader: {flags}. The hand labels will say which reader is closer to a "
+          f"human reading; the secondary H2 test leaves these categories out.")
 L = N["subject_loss"]
 if L:
     a = L["loss"]["any"]
@@ -409,6 +426,21 @@ if L:
 H2 = N["test_h2"]
 print("\n\n" + (f"Primary test: AUC {fmt(H2['auc_base'], 3)} without signals and {fmt(H2['auc_signals'], 3)} "
                 f"with them (one-sided DeLong p = {fmt(H2['p_one_sided'], 3)})." if H2 else fmt(None)))
+H2R = N["test_h2_reliable"]
+if H2R:
+    print(f" With the reliable categories only: AUC {fmt(H2R['auc_signals'], 3)} "
+          f"(one-sided DeLong p = {fmt(H2R['p_one_sided'], 3)}).")
+```
+
+```{python}
+#| output: asis
+if K:
+    ag = pd.DataFrame([{"Category": CATEGORY_NAMES[c], "First reader": v["primary"],
+                        "Second reader": v["secondary"], "Both": v["both"], "Kappa": v["kappa"]}
+                       for c, v in K.items()])
+    print(": Agreement of the two language models on the material-fact subjects they both read: flags "
+          "from each reader, flags from both, and Cohen's kappa. {#tbl-agreement}\n")
+    print(table(ag, 2))
 ```
 
 # Agentic credit memo

@@ -57,7 +57,16 @@ def load() -> dict:
         f = ROOT / "results" / f"{name}.csv"
         n[name] = pd.read_csv(f) if f.exists() else None
     n["test_h2"] = _json("results/test_h2.json")
+    n["test_h2_reliable"] = _json("results/test_h2_reliable.json")
     return n
+
+
+CATEGORY_NAMES = {"debt_restructuring": "Debt restructuring", "covenant": "Covenant waiver or breach",
+                  "missed_payment": "Missed payment", "asset_sale_liquidity": "Asset sale for liquidity",
+                  "emergency_capital": "Emergency capital", "going_concern": "Going concern",
+                  "ceo_cfo_change": "Executive change", "rating_downgrade": "Rating downgrade",
+                  "own_recovery": "Own recovery", "subsidiary_recovery": "Subsidiary recovery",
+                  "sanction": "Sanction"}
 
 
 def fmt(x, digits: int = 0, pct: bool = False) -> str:
@@ -68,7 +77,7 @@ def fmt(x, digits: int = 0, pct: bool = False) -> str:
         return f"{100 * x:.{digits}f}%"
     if isinstance(x, (int,)) or (isinstance(x, float) and digits == 0):
         return f"{int(round(x)):,}"
-    return f"{x:,.{digits}f}"
+    return f"{round(x, digits) + 0.0:,.{digits}f}"  # + 0.0 turns -0.00 into 0.00
 
 
 def table(df: pd.DataFrame | None, digits: int = 3) -> str:

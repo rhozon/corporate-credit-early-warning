@@ -64,6 +64,12 @@ SIGNALS = [f"sig_{c}_12m" for c in FEATURE_CATEGORIES] + ["sig_any_12m"]
 PRIMARY_MODEL = "logit_hazard"
 
 
+def reliable_signals(kappa: dict, threshold: float = 0.6) -> list[str]:
+    """Signal columns of the categories on which the two language models agree (kappa at or above the
+    threshold). The any-signal count is left out, since it mixes in the categories that are dropped."""
+    return [f"sig_{c}_12m" for c in FEATURE_CATEGORIES if (kappa.get(c) or 0) >= threshold]
+
+
 def ablation_table(base: pd.DataFrame, signals: pd.DataFrame) -> pd.DataFrame:
     """Each model with and without the signals (one-sided DeLong, signals better). The primary model's
     row is the pre-registered test; Holm's correction covers the other, secondary, rows."""

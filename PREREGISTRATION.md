@@ -36,3 +36,19 @@ All with Holm's correction within each family, and reported as secondary:
 - Intervals: 95% percentile intervals from 1,000 bootstrap samples of firms.
 - Robustness: a narrow event definition (judicial recovery and bankruptcy only) and an annual
   refit with a moving origin over the test years.
+
+## Amendment, 2026-11-21 (before the test period was opened)
+
+The second reader's labels arrived after this file was committed. On the 3,000 subjects both
+models read, agreement (`results/llm_agreement.json`) is kappa 0.60 or higher in eight categories
+and lower in three: going concern (0.00; 11 flags from the first reader, 1 from the second),
+subsidiary recovery (0.50) and sanction (0.51). One analysis is added; nothing above changes.
+
+- Secondary H2 test on reliable categories: the same model, statistic and test as the primary,
+  with the treated arm restricted to the 12-month counts of the categories with kappa of 0.60 or
+  higher (`experiment.reliable_signals`), without the any-category count, which mixes in the
+  categories left out. Seven columns: debt restructuring, covenant, missed payment, asset sale,
+  emergency capital, executive change and rating downgrade.
+- The threshold was chosen after the agreement values were seen and before any test row was
+  used. Emergency capital (0.601) sits on it.
+- The primary test stays as registered; this one is reported beside it, as secondary.

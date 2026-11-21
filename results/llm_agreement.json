@@ -1,0 +1,90 @@
+{
+  "debt_restructuring": {
+    "n": 3000,
+    "primary": 65,
+    "secondary": 59,
+    "both": 47,
+    "agreement": 0.99,
+    "kappa": 0.7529712074218429
+  },
+  "covenant": {
+    "n": 3000,
+    "primary": 5,
+    "secondary": 3,
+    "both": 3,
+    "agreement": 0.9993333333333333,
+    "kappa": 0.7496871088861077
+  },
+  "missed_payment": {
+    "n": 3000,
+    "primary": 9,
+    "secondary": 13,
+    "both": 7,
+    "agreement": 0.9973333333333333,
+    "kappa": 0.6350697929021074
+  },
+  "asset_sale_liquidity": {
+    "n": 3000,
+    "primary": 194,
+    "secondary": 163,
+    "both": 153,
+    "agreement": 0.983,
+    "kappa": 0.8481775350382433
+  },
+  "emergency_capital": {
+    "n": 3000,
+    "primary": 81,
+    "secondary": 47,
+    "both": 39,
+    "agreement": 0.9833333333333333,
+    "kappa": 0.6014729559547911
+  },
+  "going_concern": {
+    "n": 3000,
+    "primary": 11,
+    "secondary": 1,
+    "both": 0,
+    "agreement": 0.996,
+    "kappa": -0.0006114847962641612
+  },
+  "ceo_cfo_change": {
+    "n": 3000,
+    "primary": 122,
+    "secondary": 74,
+    "both": 72,
+    "agreement": 0.9826666666666667,
+    "kappa": 0.7262888985584548
+  },
+  "rating_downgrade": {
+    "n": 3000,
+    "primary": 10,
+    "secondary": 11,
+    "both": 9,
+    "agreement": 0.999,
+    "kappa": 0.8566422427524689
+  },
+  "own_recovery": {
+    "n": 3000,
+    "primary": 59,
+    "secondary": 57,
+    "both": 53,
+    "agreement": 0.9966666666666667,
+    "kappa": 0.9120940944812672
+  },
+  "subsidiary_recovery": {
+    "n": 3000,
+    "primary": 10,
+    "secondary": 6,
+    "both": 4,
+    "agreement": 0.9973333333333333,
+    "kappa": 0.4987468671679198
+  },
+  "sanction": {
+    "n": 3000,
+    "primary": 111,
+    "secondary": 46,
+    "both": 41,
+    "agreement": 0.975,
+    "kappa": 0.5117060340113024
+  }
+}

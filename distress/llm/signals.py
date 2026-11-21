@@ -195,6 +195,21 @@ def agreement(a: pd.DataFrame, b: pd.DataFrame) -> dict:
     return out
 
 
+def agreement_table(a: pd.DataFrame, b: pd.DataFrame) -> dict:
+    """Per category: how often each reader flags it, how often both do, raw agreement and kappa.
+
+    Kappa alone hides prevalence: on a rare category one reader's few extra flags drive it to zero
+    while raw agreement stays near one, so the counts are reported beside it.
+    """
+    kappa = agreement(a, b)
+    out = {}
+    for c, k in kappa.items():
+        x, y = a[c].values == 1, b[c].values == 1
+        out[c] = {"n": int(len(x)), "primary": int(x.sum()), "secondary": int(y.sum()), "both": int((x & y).sum()),
+                  "agreement": float((x == y).mean()), "kappa": k}
+    return out
+
+
 def signal_features(classified: pd.DataFrame, panel: pd.DataFrame) -> pd.DataFrame:
     """Counts of each category in the 4 and 12 months before each panel quarter (documents strictly before q)."""
     cols = {f"sig_{c}_{w}m": np.zeros(len(panel), dtype=int) for c in FEATURE_CATEGORIES for w in (4, 12)}
