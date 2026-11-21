@@ -33,3 +33,6 @@ delong1988,DeLong,1988,Comparing the areas under two or more correlated receiver
 vancalster2019,Van Calster,2019,Calibration: the Achilles heel of predictive analytics,metric,10.1186/s12916-019-1466-7
 cohen1960,Cohen,1960,A coefficient of agreement for nominal scales,metric,10.1177/001316446002000104
 page2021,Page,2021,The PRISMA 2020 statement: an updated guideline for reporting systematic reviews,review,10.1136/bmj.n71
+bellotti2009,Bellotti,2009,Credit scoring with macroeconomic variables using survival analysis,survival,10.1057/jors.2008.130
+dirick2017,Dirick,2017,Time to default in credit scoring using survival analysis: a benchmark study,survival,10.1057/s41274-016-0128-9
+lessmann2015,Lessmann,2015,Benchmarking state-of-the-art classification algorithms for credit scoring: an update of research,ml,10.1016/j.ejor.2015.05.030
