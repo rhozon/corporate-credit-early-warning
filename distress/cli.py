@@ -121,6 +121,8 @@ def cmd_signals(a):
         cl.to_parquet(DATA / f"signals_{tag}.parquet")
         out[tag] = cl
         print(tag, "done:", len(cl), "documents")
+    if "primary" not in out and (DATA / "signals_primary.parquet").exists():
+        out["primary"] = pd.read_parquet(DATA / "signals_primary.parquet")
     (ROOT / "results").mkdir(exist_ok=True)
     (ROOT / "results" / "llm_models.json").write_text(json.dumps(
         {"primary": {"model": PRIMARY[0], "usd_per_token_in": PRIMARY[1], "usd_per_token_out": PRIMARY[2]},

@@ -1,0 +1,10 @@
+{
+  "identified": 4137,
+  "duplicates_removed": 118,
+  "screened": 4019,
+  "excluded_title_abstract": 2377,
+  "included": 1642,
+  "full_text_open_access": 805,
+  "kappa_screeners": 0.818,
+  "agreement": 0.916
+}
