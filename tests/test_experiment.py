@@ -100,3 +100,15 @@ def test_ablation_keeps_the_primary_model_out_of_the_holm_family():
     assert t.loc["logit_hazard", "role"] == "primary" and pd.isna(t.loc["logit_hazard", "p_holm"])
     assert (t.drop("logit_hazard")["role"] == "secondary").all()
     assert t.loc["cox", "auc_diff"] > 0 and t.loc["cox", "p_holm"] < 0.05
+
+
+def test_rolling_refit_trains_with_a_one_year_embargo_before_each_test_year():
+    p = synthetic_panel(n_firms=200, seed=7)
+    res, folds = experiment.rolling(p, years=[2017, 2018], models=["logit_hazard"], features=["x1"],
+                                    eval_end=pd.Timestamp("2019-12-31"), fast=True)
+    assert res[["year", "model"]].values.tolist() == [[2017, "logit_hazard"], [2018, "logit_hazard"]]
+    f = folds.set_index("year")
+    assert f.loc[2017, "train_last_q"] == pd.Timestamp("2015-12-31")
+    assert f.loc[2018, "train_last_q"] == pd.Timestamp("2016-12-31")
+    assert f.loc[2018, "test_first_q"] == pd.Timestamp("2018-03-31")
+    assert (res["auc"] > 0.6).all()

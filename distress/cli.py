@@ -312,8 +312,11 @@ def cmd_test(a):
     from .llm import signals
     from .models import MODELS
 
-    if not (DATA / "events_reviewed.csv").exists():
+    reviewed = DATA / "events_reviewed.csv"
+    if not reviewed.exists():
         raise SystemExit("data/events_reviewed.csv is missing: the test stays closed until the event review.")
+    if (DATA / "panel.parquet").stat().st_mtime < reviewed.stat().st_mtime:
+        raise SystemExit("panel.parquet is older than the reviewed events: run `distress.cli panel` first.")
     out = ROOT / "results"
     out.mkdir(exist_ok=True)
     p = pd.read_parquet(DATA / "panel.parquet")
@@ -338,6 +341,23 @@ def cmd_test(a):
     experiment.ablation_table(preds, preds_s).to_csv(out / "test_h2_ablation.csv", index=False)
     print(res[["model", "auc", "auc_lo", "auc_hi", "c_uno", "ibs"]].round(3).to_string(index=False))
     print("H2 primary:", {k: (round(v, 4) if isinstance(v, float) else v) for k, v in h2.items()})
+
+    # Robustness 1: narrow event definition (judicial recovery and bankruptcy; out-of-court left out).
+    from . import macro as macro_mod
+    ev = load_events()
+    narrow = ev[ev["event_type"].isin(["RJ", "FAL"])]
+    cad = cvm.read_cad().drop_duplicates("cd_cvm")
+    pn = panel_mod.build_panel(pd.read_parquet(DATA / "features.parquet"), narrow, cad, macro_mod.build_macro(),
+                               start="2011-03-31", end=str(pd.Timestamp(p["q"].max()).date()))
+    tr_n, te_n = panel_mod.split(pn, data_end=eval_end)
+    res_n, _ = experiment.run(tr_n, te_n, experiment.BASE, list(MODELS), fit_end, eval_end)
+    res_n.assign(events_definition="narrow").to_csv(out / "test_robust_narrow.csv", index=False)
+    # Robustness 2: annual refit with a moving origin over the test years.
+    last = (eval_end - pd.DateOffset(months=12)).year
+    res_r, folds = experiment.rolling(p, range(2021, last + 1), list(MODELS), experiment.BASE, eval_end=eval_end)
+    res_r.to_csv(out / "test_robust_rolling.csv", index=False)
+    folds.to_csv(out / "test_robust_rolling_folds.csv", index=False)
+    print("narrow:", res_n[["model", "events", "auc"]].round(3).to_dict("records"))
 
 
 def main(argv=None):

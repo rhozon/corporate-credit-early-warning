@@ -141,3 +141,22 @@ def calibration_by_horizon(preds: pd.DataFrame, horizons=(12, 24, 36)) -> pd.Dat
                 row.update({"brier": np.nan, "calib_intercept": np.nan, "calib_slope": np.nan})
             rows.append(row)
     return pd.DataFrame(rows)
+
+
+def rolling(p: pd.DataFrame, years, models: list[str], features: list[str], eval_end: pd.Timestamp,
+            fast: bool = False, seed: int = 2026):
+    """Annual refit with a moving origin (robustness): to score year Y, fit on quarters up to the end of
+    Y-2 with outcomes observed to the end of Y-1 (the embargo year), and test on the quarters of Y."""
+    q = pd.to_datetime(p["q"])
+    rows, folds = [], []
+    for y in years:
+        train = p[q <= pd.Timestamp(f"{y - 2}-12-31")]
+        test = p[(q >= pd.Timestamp(f"{y}-01-01")) & (q <= pd.Timestamp(f"{y}-12-31"))]
+        res, _ = run(train, test, features, models, fit_end=pd.Timestamp(f"{y - 1}-12-31"), eval_end=eval_end,
+                     fast=fast, seed=seed)
+        rows.append(res.assign(year=y))
+        folds.append({"year": y, "train_last_q": pd.to_datetime(train["q"]).max(),
+                      "test_first_q": pd.to_datetime(test["q"]).min(), "n_train": len(train), "n_test": len(test),
+                      "train_events": int(train["event"].sum()), "test_events": int(test["event"].sum())})
+    res = pd.concat(rows, ignore_index=True)
+    return res[["year"] + [c for c in res.columns if c != "year"]], pd.DataFrame(folds)
