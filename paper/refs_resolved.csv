@@ -37,3 +37,4 @@ bellotti2009,Bellotti,2009,Credit scoring with macroeconomic variables using sur
 dirick2017,Dirick,2017,Time to default in credit scoring using survival analysis: a benchmark study,survival,10.1057/s41274-016-0128-9
 lessmann2015,Lessmann,2015,Benchmarking state-of-the-art classification algorithms for credit scoring: an update of research,ml,10.1016/j.ejor.2015.05.030
 landis1977,Landis,1977,The measurement of observer agreement for categorical data,reliability,10.2307/2529310
+horvitz1952,Horvitz,1952,A generalization of sampling without replacement from a finite universe,reliability,10.1080/01621459.1952.10483446

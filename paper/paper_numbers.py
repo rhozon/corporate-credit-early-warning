@@ -46,6 +46,7 @@ def load() -> dict:
     n["core"] = _json("slr/core_retrieval.json")
     n["signals_kappa"] = _json("results/llm_agreement.json")
     n["subject_loss"] = _json("results/subject_vs_fulltext.json")
+    n["gold"] = _json("results/gold_metrics.json")
     n["llm_models"] = _json("results/llm_models.json")
     # Document-level labels are private (they read as alerts on named firms); the counts are public.
     counts = _json("results/signal_counts.json") or {}

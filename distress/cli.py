@@ -276,6 +276,33 @@ def cmd_fulltext_sample(a):
     print({k: res[k] for k in ("sample", "read")}, "any:", loss["any"])
 
 
+def cmd_gold(a):
+    """The author's labels against both readers: precision and recall per category, each label weighted by
+    the inverse of its chance of entering the stratified sample. The second reader classifies the labelled
+    subjects too, so both are scored on the same documents."""
+    import json
+
+    from .llm import signals
+
+    gold = signals.read_gold(pd.read_excel(a.sheet))
+    primary = pd.read_parquet(PRIVATE / "signals_primary.parquet").reset_index(drop=True)
+    drawn = signals.gold_sample(primary, n=a.n, seed=2026)
+    if set(gold.index) != set(drawn):
+        raise SystemExit("the sheet's ids are not the drawn sample: weights would be wrong.")
+    docs = pd.read_parquet(DATA / "raw" / "signals_primary_docs.parquet").set_index("doc_id").loc[gold.index]
+    cnpj = cvm.read_cad().drop_duplicates("cd_cvm").set_index("cd_cvm")["cnpj"]
+    docs["cnpj"] = docs["cd_cvm"].map(cnpj).fillna("")
+    second = signals.classify_subjects(docs, llm(SECONDARY, max_tokens=3000), batch=40, workers=a.workers)
+    second.index = gold.index
+    second.to_parquet(PRIVATE / "gold_secondary.parquet")
+    pi = pd.Series(signals.inclusion_prob(primary, n=a.n))
+    res = {"labelled": len(gold), "design_n": a.n, "seed": 2026,
+           "metrics": signals.gold_metrics(gold, {"primary": primary, "secondary": second}, pi)}
+    (ROOT / "results").mkdir(exist_ok=True)
+    (ROOT / "results" / "gold_metrics.json").write_text(json.dumps(res, indent=2))
+    print("any:", res["metrics"]["any"])
+
+
 def cmd_refs(a):
     """paper/references.bib from Crossref-verified DOIs only: the cited works in refs_seed.csv,
     resolved by bibliographic search, and the studies of the review's full-text core."""
@@ -416,6 +443,11 @@ def main(argv=None):
     sg.set_defaults(fn=cmd_signals)
     ag = sub.add_parser("agreement")
     ag.set_defaults(fn=cmd_agreement)
+    gd = sub.add_parser("gold")
+    gd.add_argument("sheet")
+    gd.add_argument("--n", type=int, default=150)
+    gd.add_argument("--workers", type=int, default=2)
+    gd.set_defaults(fn=cmd_gold)
     sl = sub.add_parser("slr")
     sl.add_argument("step", choices=["screen", "combine", "extract", "core"])
     sl.add_argument("--which", choices=["primary", "secondary"], default="primary")

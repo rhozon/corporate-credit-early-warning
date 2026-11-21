@@ -133,3 +133,64 @@ def test_material_fact_text_is_cached(tmp_path, monkeypatch):
     assert signals.fetch_doc("http://cvm/1", tmp_path, "1", get=get).startswith("Fato relevante")
     assert signals.fetch_doc("http://cvm/1", tmp_path, "1", get=get).startswith("Fato relevante")
     assert calls == ["http://cvm/1"]
+
+
+def _strata_frame():
+    """145 subjects: 40 flagged covenant, 5 flagged sanction, 100 with no flag."""
+    first = ["covenant"] * 40 + ["sanction"] * 5 + [None] * 100
+    df = pd.DataFrame({c: [int(f == c) for f in first] for c in signals.CATEGORIES})
+    df["delivered"] = pd.Timestamp("2015-06-30")
+    return df
+
+
+def test_gold_sample_is_the_sample_the_gold_sheet_writes(tmp_path):
+    df = _strata_frame().assign(name="ACME S.A.", subject="x", link="y")
+    sheet = signals.gold_sheet(df, tmp_path / "g.xlsx", n=30, seed=7)
+    assert list(signals.gold_sample(df, n=30, seed=7)) == sheet["id"].tolist()
+
+
+def test_inclusion_probability_matches_how_often_the_sample_picks_a_document():
+    df = _strata_frame()
+    pi = signals.inclusion_prob(df, n=30)
+    hits = np.zeros(len(df))
+    reps = 400
+    for seed in range(reps):
+        hits[list(signals.gold_sample(df, n=30, seed=seed))] += 1
+    for rows in (slice(0, 40), slice(40, 45), slice(45, 145)):
+        assert hits[rows].mean() / reps == pytest.approx(pi[rows].mean(), abs=0.02)
+    assert pi.sum() == pytest.approx(30)
+
+
+def test_read_gold_takes_marks_and_none():
+    sheet = pd.DataFrame({"id": [5, 9], signals.LABELS_PT["covenant"]: ["X", ""],
+                          signals.LABELS_PT["sanction"]: ["x", None], "nenhuma": [None, "X"]})
+    for c in signals.CATEGORIES:
+        if signals.LABELS_PT[c] not in sheet:
+            sheet[signals.LABELS_PT[c]] = ""
+    g = signals.read_gold(sheet)
+    assert g.loc[5, "covenant"] == 1 and g.loc[5, "sanction"] == 1 and g.loc[5, "going_concern"] == 0
+    assert g.loc[9].sum() == 0
+
+
+@pytest.mark.parametrize("cov, none, msg", [("", "", "no label"), ("X", "X", "nenhuma"), ("talvez", "", "mark")])
+def test_read_gold_refuses_blank_conflicting_or_unclear_rows(cov, none, msg):
+    sheet = pd.DataFrame({"id": [1], "nenhuma": [none]})
+    for c in signals.CATEGORIES:
+        sheet[signals.LABELS_PT[c]] = cov if c == "covenant" else ""
+    with pytest.raises(ValueError, match=msg):
+        signals.read_gold(sheet)
+
+
+def test_gold_metrics_weights_each_document_by_its_chance_of_being_drawn():
+    ids = [10, 11, 12, 13]
+    gold = pd.DataFrame({c: 0 for c in signals.CATEGORIES}, index=ids)
+    gold["covenant"] = [1, 1, 1, 0]
+    reader = gold * 0
+    reader["covenant"] = [1, 0, 0, 1]
+    pi = pd.Series([0.5, 0.5, 0.1, 0.1], index=ids)
+    m = signals.gold_metrics(gold, {"primary": reader}, pi)["covenant"]
+    assert m["human"] == 3
+    assert m["primary"]["flags"] == 2 and m["primary"]["both"] == 1
+    # weights 2, 2, 10, 10: precision 2 / (2 + 10), recall 2 / (2 + 2 + 10)
+    assert m["primary"]["precision"] == pytest.approx(2 / 12)
+    assert m["primary"]["recall"] == pytest.approx(2 / 14)

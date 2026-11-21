@@ -354,9 +354,11 @@ print(
 Reliability is measured three ways. A second model reads a random subsample of 3,000 documents and
 agreement is reported per category as Cohen's kappa [@cohen1960], next to the number of flags from
 each reader, since on a rare category a few extra flags move kappa a long way. The author labelled
-150 documents, sampled by category and period, which give precision and recall against a human
-reading. And 200 documents drawn at random are read in full, to measure what the subject line
-misses.
+150 subjects, drawn with an equal quota for each category the first reader flags (and for subjects
+with no flag) and filled at random; both readers are scored against these labels, each label
+weighted by the inverse of its chance of being drawn [@horvitz1952], so that precision and recall
+estimate the rates over all documents rather than over a sample rich in rare categories. And 200
+documents drawn at random are read in full, to measure what the subject line misses.
 
 ## Pre-registered test of H2
 
@@ -404,8 +406,18 @@ if K:
           f"least {fmt(min(v['agreement'] for v in K.values()), 1, pct=True)} in every category, because most "
           f"subjects carry no signal at all, so kappa is the informative figure. The first reader flags more "
           f"often than the second in {fmt(n_more)} of the {fmt(len(K))} categories. Kappa falls below 0.60 in "
-          f"{fmt(len(low))}, each with many more flags from the first reader: {flags}. The hand labels will say which reader is closer to a "
+          f"{fmt(len(low))}, each with many more flags from the first reader: {flags}. The author's labels decide which reader is closer to a "
           f"human reading; the secondary H2 test leaves these categories out.")
+G = N["gold"]
+if G:
+    an = G["metrics"]["any"]
+    print(f" Against the author's labels on {fmt(G['labelled'])} subjects, the first reader reaches precision "
+          f"{fmt(an['primary']['precision'], 2)} and recall {fmt(an['primary']['recall'], 2)} for any feature "
+          f"category, the second {fmt(an['secondary']['precision'], 2)} and {fmt(an['secondary']['recall'], 2)} "
+          f"(@tbl-gold). Recall is the less certain figure: subjects with no flag are most of the corpus and "
+          f"are sampled thinly, so the few signals the author finds among them carry large weights.")
+else:
+    print(f" Precision and recall against the author's labels: {fmt(None)}.")
 L = N["subject_loss"]
 if L:
     a = L["loss"]["any"]
@@ -441,6 +453,20 @@ if K:
     print(": Agreement of the two language models on the material-fact subjects they both read: flags "
           "from each reader, flags from both, and Cohen's kappa. {#tbl-agreement}\n")
     print(table(ag, 2))
+```
+
+```{python}
+#| output: asis
+if G:
+    na = lambda x: "n/a" if x is None else x  # noqa: E731
+    gt = pd.DataFrame([{"Category": CATEGORY_NAMES.get(c, "Any feature category"), "Author": v["human"],
+                        "P1": na(v["primary"]["precision"]), "R1": na(v["primary"]["recall"]),
+                        "P2": na(v["secondary"]["precision"]), "R2": na(v["secondary"]["recall"])}
+                       for c, v in G["metrics"].items()])
+    print(f": The two readers against the author's labels on {fmt(G['labelled'])} subjects. Author: subjects the "
+          "author flags in the sample. P1 and R1: precision and recall of the first reader; P2 and R2: of the "
+          "second. Both are weighted by the inverse of each subject's chance of being drawn. {#tbl-gold}\n")
+    print(table(gt, 2))
 ```
 
 # Agentic credit memo

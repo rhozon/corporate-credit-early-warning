@@ -235,21 +235,47 @@ def signal_features(classified: pd.DataFrame, panel: pd.DataFrame) -> pd.DataFra
     return pd.DataFrame(cols, index=panel.index)
 
 
-def gold_sheet(classified: pd.DataFrame, path: Path, n: int = 150, seed: int = 2026) -> pd.DataFrame:
-    """Stratified sample for the author to label: every category and period represented."""
+def _first_category(df: pd.DataFrame) -> np.ndarray:
+    """The first category a document is flagged with, in CATEGORIES order, or "none"."""
+    flags = df[CATEGORIES].astype(bool).values
+    first = np.array(CATEGORIES, dtype=object)[flags.argmax(axis=1)]
+    return np.where(flags.any(axis=1), first, "none")
+
+
+def gold_sample(classified: pd.DataFrame, n: int = 150, seed: int = 2026) -> list[int]:
+    """Positions of the documents drawn for hand labelling: an equal quota from each stratum (the first
+    category the primary reader flags, or none), then a uniform draw from the rest up to n."""
     rng = np.random.default_rng(seed)
-    df = classified.reset_index(drop=True).copy()
-    df["primary"] = [next((c for c in CATEGORIES if r[c]), "none") for _, r in df.iterrows()]
-    df["period"] = pd.cut(df["delivered"].dt.year, [2000, 2014, 2019, 2100], labels=["-2014", "2015-19", "2020-"])
+    df = classified.reset_index(drop=True)
+    first = pd.Series(_first_category(df), index=df.index)
     per = max(1, n // (len(CATEGORIES) + 1))
     picked = []
-    for _, g in df.groupby(["primary"], observed=True):
-        k = min(len(g), per)
-        picked += list(rng.choice(g.index, size=k, replace=False))
+    for _, g in df.groupby(first):
+        picked += list(rng.choice(g.index, size=min(len(g), per), replace=False))
     rest = df.index.difference(picked)
     if len(picked) < n and len(rest):
         picked += list(rng.choice(rest, size=min(n - len(picked), len(rest)), replace=False))
-    sample = df.loc[rng.permutation(picked[:n])]
+    return [int(i) for i in rng.permutation(picked[:n])]
+
+
+def inclusion_prob(classified: pd.DataFrame, n: int = 150) -> np.ndarray:
+    """Chance that each document enters ``gold_sample``: its stratum quota plus its share of the uniform
+    fill. Weighting labels by the inverse turns sample counts into estimates for all documents."""
+    first = pd.Series(_first_category(classified.reset_index(drop=True)))
+    sizes = first.value_counts()
+    quota = sizes.clip(upper=max(1, n // (len(CATEGORIES) + 1)))
+    total, drawn = len(first), int(quota.sum())
+    if drawn > n:
+        raise ValueError("the stratum quotas exceed the sample size")
+    fill = min(n - drawn, total - drawn) / (total - drawn) if total > drawn else 0.0
+    q = (first.map(quota) / first.map(sizes)).values
+    return q + (1 - q) * fill
+
+
+def gold_sheet(classified: pd.DataFrame, path: Path, n: int = 150, seed: int = 2026) -> pd.DataFrame:
+    """Sheet for the author to label, drawn by ``gold_sample`` (stratified by the primary reader's category)."""
+    df = classified.reset_index(drop=True)
+    sample = df.loc[gold_sample(classified, n, seed)]
     sheet = pd.DataFrame({"id": sample.index, "empresa": sample["name"], "data": sample["delivered"].dt.date,
                           "assunto": sample["subject"], "link": sample["link"]})
     for c in CATEGORIES:
@@ -259,3 +285,55 @@ def gold_sheet(classified: pd.DataFrame, path: Path, n: int = 150, seed: int = 2
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     sheet.to_excel(path, index=False)
     return sheet
+
+
+def _mark(v) -> int:
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return 0
+    if isinstance(v, (int, float, np.integer, np.floating)) and not isinstance(v, bool) and v in (0, 1):
+        return int(v)
+    t = str(v).strip().lower()
+    if t in ("", "0", "n", "nao", "não"):
+        return 0
+    if t in ("x", "1", "s", "sim"):
+        return 1
+    raise ValueError(f"unclear mark {v!r} in the label sheet: use X, or leave the cell blank")
+
+
+def read_gold(sheet: pd.DataFrame) -> pd.DataFrame:
+    """The author's labels: one row per document id, 0/1 per category. Every row needs a category or
+    "nenhuma", never both."""
+    ids = sheet["id"].astype(int).values
+    marks = pd.DataFrame({c: [_mark(v) for v in sheet[LABELS_PT[c]]] for c in CATEGORIES}, index=ids)
+    none = np.array([_mark(v) for v in sheet["nenhuma"]])
+    flagged = marks.sum(axis=1).values > 0
+    blank = ids[~flagged & (none == 0)]
+    if len(blank):
+        raise ValueError(f"{len(blank)} row(s) with no label (mark a category or nenhuma): ids {list(blank[:10])}")
+    both = ids[flagged & (none == 1)]
+    if len(both):
+        raise ValueError(f"{len(both)} row(s) marked nenhuma and a category: ids {list(both[:10])}")
+    return marks
+
+
+def gold_metrics(gold: pd.DataFrame, readers: dict[str, pd.DataFrame], pi: pd.Series) -> dict:
+    """Precision and recall of each reader against the author's labels, per category and for any feature
+    category. Each document counts 1 / (its chance of being drawn), so the stratified sample estimates the
+    rates over all documents; the raw counts are reported beside them."""
+    w = 1 / pi.loc[gold.index].values
+
+    def flag(df, c):
+        cols = FEATURE_CATEGORIES if c == "any" else [c]
+        return df.loc[gold.index, cols].values.sum(axis=1) > 0
+
+    def score(h, m):
+        both = h & m
+        return {"flags": int(m.sum()), "both": int(both.sum()),
+                "precision": float((w * both).sum() / (w * m).sum()) if m.any() else None,
+                "recall": float((w * both).sum() / (w * h).sum()) if h.any() else None}
+
+    out = {}
+    for c in CATEGORIES + ["any"]:
+        h = flag(gold, c)
+        out[c] = {"human": int(h.sum())} | {name: score(h, flag(r, c)) for name, r in readers.items()}
+    return out
