@@ -7,3 +7,4 @@ data/raw/
 *.json.part
 data/pit.parquet
 cache/llm/
+slr/fulltext/

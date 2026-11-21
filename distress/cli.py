@@ -189,6 +189,46 @@ def cmd_slr(a):
                                                                    "agreement": round(float((r["decision_a"] == r["decision_b"]).mean()), 3)}
         (review.SLR / "prisma.json").write_text(json.dumps(counts, indent=2))
         print(counts)
+    elif a.step == "core":
+        from concurrent.futures import ThreadPoolExecutor
+
+        from .slr import fulltext as ft
+
+        ranked = ft.rank_core(pd.read_parquet(review.SLR / "extraction.parquet"))
+        cache, texts = review.SLR / "fulltext", {}
+        first = ranked.drop_duplicates("openalex_id").set_index("openalex_id")
+        pool = ranked[(ranked["rank"] <= 60) | ((ranked["stratum"] == "general") & (ranked["rank"] <= 200))]
+        works = ft.openalex_works(first.loc[pool["openalex_id"].unique(), "doi"].dropna().tolist(),
+                                  review.SLR / "raw" / "openalex_locations.json")
+
+        def urls(i):
+            alt = ft.alt_urls(works.get(first.at[i, "doi"]) or {}) if pd.notna(first.at[i, "doi"]) else []
+            return list(dict.fromkeys(alt + [first.at[i, "oa_url"]]))[:4]
+
+        def fetch(ids):
+            todo = [i for i in ids if i not in texts]
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                for i, t in zip(todo, ex.map(lambda i: ft.fetch_text(urls(i), cache, i), todo)):
+                    texts[i] = t
+
+        # Walk each stratum in rank order until it has twice its quota with text (overlaps between
+        # strata eat into the quota) or 60 records were tried; then the general list for the fill.
+        for s, need in [(s, 2 * a.per_stratum) for s in ft.STRATA] + [("general", a.core_size + 20)]:
+            ids = ranked.loc[ranked["stratum"] == s].sort_values("rank")["openalex_id"].tolist()
+            for k in range(0, min(len(ids), 60 if s != "general" else 200), 12):
+                fetch(ids[k:k + 12])
+                if sum(bool(texts.get(i)) for i in ids) >= need:
+                    break
+        have = {i for i, t in texts.items() if t}
+        core = ft.pick_core(ranked, have, per_stratum=a.per_stratum, n=a.core_size)
+        cols = ["openalex_id", "stratum", "doi", "title", "year", "venue", "cited_by", "score", "oa_url"]
+        core[cols].to_csv(review.SLR / "core_list.csv", index=False)
+        out = ft.extract_fulltext(llm(PRIMARY, max_tokens=1500), core, texts, workers=a.workers)
+        out.to_parquet(review.SLR / "core_extraction.parquet", index=False)
+        stats = {"tried": len(texts), "full_text": len(have), "core": len(core),
+                 "read_ok": int(out["ft_read_ok"].sum()), "by_stratum": core["stratum"].value_counts().to_dict()}
+        (review.SLR / "core_retrieval.json").write_text(json.dumps(stats, indent=2))
+        print(stats)
 
 
 def cmd_validate(a):
@@ -224,9 +264,11 @@ def main(argv=None):
     sg.add_argument("--sheet", default=None)
     sg.set_defaults(fn=cmd_signals)
     sl = sub.add_parser("slr")
-    sl.add_argument("step", choices=["screen", "combine", "extract"])
+    sl.add_argument("step", choices=["screen", "combine", "extract", "core"])
     sl.add_argument("--which", choices=["primary", "secondary"], default="primary")
     sl.add_argument("--workers", type=int, default=3)
+    sl.add_argument("--per-stratum", type=int, default=10)
+    sl.add_argument("--core-size", type=int, default=60)
     sl.set_defaults(fn=cmd_slr)
     va = sub.add_parser("validate")
     va.add_argument("--data-end", default="2026-11-20")
