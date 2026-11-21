@@ -134,7 +134,7 @@ def cmd_signals(a):
         print("kappa:", {k: round(v, 2) for k, v in kappa.items()})
     if a.sheet and "primary" in out:
         cl = out["primary"].assign(name=fr["name"], subject=fr["subject"], link=fr["link"])
-        cl.reset_index(drop=False).rename(columns={"index": "doc_id"}).to_parquet(DATA / "signals_primary_docs.parquet")
+        cl.reset_index(drop=False).rename(columns={"index": "doc_id"}).to_parquet(DATA / "raw" / "signals_primary_docs.parquet")
         signals.gold_sheet(cl, Path(a.sheet), n=150)
         print("gold sheet:", a.sheet)
 
@@ -238,7 +238,7 @@ def cmd_fulltext_sample(a):
 
     from .llm import signals
 
-    docs = pd.read_parquet(DATA / "signals_primary_docs.parquet")
+    docs = pd.read_parquet(DATA / "raw" / "signals_primary_docs.parquet")
     cnpj = cvm.read_cad().drop_duplicates("cd_cvm").set_index("cd_cvm")["cnpj"]
     sample = docs.sample(n=a.n, random_state=2026).copy()
     sample["cnpj"] = sample["cd_cvm"].map(cnpj).fillna("")

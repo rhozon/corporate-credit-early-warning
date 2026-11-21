@@ -70,6 +70,7 @@ def read_cad(raw_dir: Path = RAW) -> pd.DataFrame:
         "cd_cvm": d["CD_CVM"].astype(int),
         "cnpj": d["CNPJ_CIA"],
         "name": d["DENOM_SOCIAL"],
+        "trade_name": d["DENOM_COMERC"] if "DENOM_COMERC" in d else None,
         "status": d["SIT"],
         "status_date": pd.to_datetime(d["DT_INI_SIT"], errors="coerce"),
         "cancel_date": pd.to_datetime(d["DT_CANCEL"], errors="coerce"),
