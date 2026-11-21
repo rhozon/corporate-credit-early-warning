@@ -13,3 +13,4 @@ paper/*.tex
 paper/*_files/
 paper/.quarto/
 data/private/
+weight_checkpoint_*.pt
