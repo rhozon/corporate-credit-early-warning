@@ -1,0 +1,438 @@
+---
+title: "Early warning of judicial recovery in Brazilian listed companies"
+subtitle: "Survival, machine learning and deep learning models on public filings, with distress signals read by language models"
+author:
+  - name: Rodrigo Hermont Ozon
+    affiliation: OQuant
+date: last-modified
+keywords: [credit risk, bankruptcy prediction, survival analysis, deep learning, large language models, Brazil]
+---
+
+```{python}
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd()))
+sys.path.insert(0, str(Path.cwd().parent))
+from paper_numbers import N, fmt, table, event_date
+```
+
+# Abstract {.unnumbered}
+
+```{python}
+#| output: asis
+print(
+    f"We ask whether survival, machine learning and deep learning models anticipate judicial or "
+    f"out-of-court recovery of Brazilian listed non-financial companies better than the classical "
+    f"accounting scores, and whether distress signals read by language models from material-fact "
+    f"filings add information. The event base is built from public CVM records with point-in-time "
+    f"dating ({fmt(N['events_window'])} events in {fmt(N['event_firms'])} firms since 2011), the "
+    f"firm-quarter panel holds {fmt(N['panel_rows'])} observations of {fmt(N['panel_firms'])} firms, "
+    f"and eight models are compared on a single out-of-time test from 2020 onwards, with firm-clustered "
+    f"bootstrap intervals. A systematic review under PRISMA 2020 ({fmt(N['prisma']['screened'])} "
+    f"records screened, {fmt(N['prisma']['included'])} included) shows that survival models are a "
+    f"minority of the literature, that out-of-time validation is rarely stated, and that no study "
+    f"included combines survival models with language-model signals on Brazilian firms. The paper "
+    f"closes with an agentic credit memo whose every number is checked against the tools that "
+    f"produced it, and with a design for a corporate monitoring service aligned with the expected-loss "
+    f"rules of CMN Resolution 4,966/2021."
+)
+```
+
+**Resumo.** Este artigo pergunta se modelos de sobrevivência, de aprendizado de máquina e de
+aprendizado profundo antecipam a recuperação judicial ou extrajudicial de companhias abertas
+brasileiras não financeiras melhor do que os escores contábeis clássicos, e se sinais de estresse
+lidos por modelos de linguagem nos fatos relevantes acrescentam informação. A base de eventos vem
+de registros públicos da CVM, datados pelo que era conhecido em cada data; oito modelos são
+comparados num único teste fora do tempo, a partir de 2020, com intervalos por bootstrap agrupado
+por empresa. Uma revisão sistemática (PRISMA 2020) mostra as lacunas que o estudo ocupa. Por fim,
+um parecer de crédito gerado por agentes, com trava numérica, e um desenho de serviço de
+monitoramento alinhado à Resolução CMN 4.966/2021.
+
+# Introduction
+
+Judicial recovery filings by large Brazilian listed companies have become frequent enough to
+matter for every lender, supplier and bond investor in the country. Oi filed in
+`{python} event_date(11312)` and again in `{python} event_date(11312, 1)`; Americanas in
+`{python} event_date(20990)`, after an accounting inconsistency was disclosed; Light in
+`{python} event_date(19879)`. Each case was followed by losses for banks, bondholders and the
+suppliers who had sold on credit. The question a credit committee asks after each of them is the
+same: was there anything in the public record, a year earlier, that should have changed the
+decision?
+
+The academic literature offers two traditions to answer it. Accounting scores, from
+@beaver1966, @altman1968 and @ohlson1980 to the emerging-market version of @altman2005, summarise
+the balance sheet in one number. Hazard models, introduced to the field by @shumway2001 and
+extended by @chava2004, @duffie2007 and @campbell2008, treat default as an event in time and use
+every firm-year, not one snapshot per firm. Since then, machine learning
+[@barboza2017; @jones2017; @lessmann2015] and deep learning [@mai2019] have been compared with
+both, and text from filings has entered as a predictor [@loughran2011; @mai2019]. Large language
+models now make it cheap to read every filing a company sends to its regulator
+[@huang2023; @kim2024; @lopezlira2023].
+
+Three things are missing for Brazil, and they are the subject of this paper. First, there is no
+public, point-in-time event base of judicial and out-of-court recoveries of listed firms; studies
+use the current registry status, which mixes dates and loses firms that left the market. Second,
+survival, tree-based and neural models have not been compared on the same Brazilian panel and the
+same out-of-time test. Third, no study we found measures, with a test fixed in advance, whether
+signals read by language models from material-fact filings improve on accounting and
+macroeconomic information.
+
+We state three hypotheses. H1: survival and machine learning models discriminate better, out of
+time, than the Altman score and the discrete-time logit. H2: distress signals read by a language
+model from material facts improve the discrimination of the 12-month probability of default (PD).
+H3: survival models give better calibrated PD term structures at 12, 24 and 36 months, which is
+what lifetime expected loss requires. The primary test of H2 was fixed before the test period was
+opened (Section 5.5).
+
+The paper is organised as follows. Section 2 summarises the regulatory frame. Section 3 reports
+the systematic review and the gaps it shows. Section 4 describes the data and the event base,
+Section 5 the method, and Section 6 the results. Section 7 presents the agentic credit memo and
+Section 8 the corporate solution. Section 9 lists the limitations and Section 10 concludes.
+
+# Regulatory context
+
+CMN Resolution 4,966 of 25 November 2021 [@cmn4966] moved Brazilian financial institutions to an
+expected-loss model for credit, with most of its provisions in force from 1 January 2025. Article
+37 allocates each financial instrument to one of three stages: instruments without a significant
+increase in credit risk since origination (first stage), instruments whose credit risk has
+increased significantly (second stage), and instruments with a credit recovery problem (third
+stage). Under Article 47, the provision for the first stage is the expected loss over the next 12
+months; for the second stage it is the expected loss over the whole expected term of the
+instrument. Article 40 asks the probability of default to consider the expected term and
+"reasonable and justifiable forecasts" of economic conditions.
+
+Two requirements follow for a corporate credit model. It must produce a term structure of default
+probabilities, not a single score, and it must detect a significant increase in credit risk early
+enough to move an exposure from the first to the second stage. Survival models produce the first
+by construction; the second is the early-warning problem this paper studies.
+
+# Systematic review
+
+## Protocol and search
+
+The review follows PRISMA 2020 [@page2021]. The protocol (`slr/protocol.md`) was written and
+committed before the search ran, and two dated amendments record the changes made while it ran.
+Three strands were searched for 2000 to 2026: (a) corporate default, bankruptcy or financial
+distress prediction with survival, machine learning or neural models; (b) text, natural language
+processing or large language models applied to credit risk or distress; (c) Brazilian evidence on
+bankruptcy, insolvency or judicial recovery. The protocol named OpenAlex as the source; when its
+anonymous quota was exhausted on the day of the search, the same strings were run on the Semantic
+Scholar bulk search (Amendment 1). Records were deduplicated by DOI and by normalised title.
+
+```{python}
+#| output: asis
+P = N["prisma"]
+print(
+    f"The search returned {fmt(P['identified'])} records; {fmt(P['duplicates_removed'])} duplicates "
+    f"were removed and {fmt(P['screened'])} titles and abstracts were screened."
+)
+```
+
+## Screening and extraction
+
+Titles and abstracts were screened against written criteria by two open-weight language models
+working independently (Gemma 4 26B and Gemma 4 31B, temperature zero). A record entered the review
+when either model included it (Amendment 2); this inclusive rule favours recall at the screening
+stage, where a false exclusion cannot be recovered later.
+
+```{python}
+#| output: asis
+print(
+    f"The two screeners agreed on {fmt(P['agreement'], 1, pct=True)} of the records (Cohen's kappa "
+    f"{fmt(P['kappa_screeners'], 2)}, [@cohen1960]). {fmt(P['excluded_title_abstract'])} records were "
+    f"excluded and {fmt(P['included'])} included, of which {fmt(P['full_text_open_access'])} have an "
+    f"open-access full text."
+)
+```
+
+Every included study was coded from its abstract: model families, validation design, country,
+unit of analysis, use of text and of language models, and number of events. A core of studies was
+then read in full. The core was drawn by stratum, so that each strand the gaps are about (survival
+models, deep learning, text and language models, Brazil, out-of-time validation) has up to ten
+studies read in depth, and was filled with the most cited studies per year since publication.
+Full texts were taken only from open-access copies; publisher sites that refuse automated requests
+were not worked around, and the next study in the stratum took the place of one that could not be
+retrieved.
+
+```{python}
+#| output: asis
+C = N["core"]
+if C:
+    print(f"Of {fmt(C['tried'])} open-access studies tried, {fmt(C['full_text'])} gave a full text; "
+          f"the core holds {fmt(C['core'])} studies, {fmt(C['read_ok'])} of them read and coded.")
+else:
+    print(fmt(None))
+```
+
+## What the literature does and does not do
+
+```{python}
+#| output: asis
+import pandas as pd
+from distress.slr import review
+ex = pd.read_parquet(Path.cwd().parent / "slr" / "extraction.parquet")
+syn = review.synthesis(ex)
+LABELS = {"statistical": "Statistical (discriminant, logit, probit)", "ml_trees": "Trees and boosting",
+          "svm": "Support vector machines", "neural_net": "Shallow neural networks",
+          "deep_learning": "Deep learning", "survival": "Survival models",
+          "ensemble_hybrid": "Ensembles and hybrids", "text_llm": "Text and language models", "other": "Other"}
+fam = syn["families"].reindex(list(LABELS)).fillna(0).astype(int).reset_index()
+fam["families"] = fam["families"].map(LABELS)
+fam = fam.rename(columns={"families": "Model family"})
+print(": Included studies by model family and period (a study can use several families). {#tbl-families}\n")
+print(table(fam))
+```
+
+```{python}
+#| output: asis
+G = N["gaps"]
+print(
+    f"Survival models appear in {fmt(G['survival'])} of the {fmt(G['n'])} included studies, and only "
+    f"{fmt(G['deep_and_survival'])} combine them with deep learning. Text enters as a predictor in "
+    f"{fmt(G['text'])} studies and language models in {fmt(G['llm'])}; survival models and language "
+    f"models meet in {fmt(G['survival_and_llm'])} study. Of the {fmt(G['brazil'])} studies with "
+    f"Brazilian data, {fmt(G['brazil_survival'])} uses a survival model, {fmt(G['brazil_deep'])} deep "
+    f"learning and {fmt(G['brazil_llm'])} a language model. Only {fmt(G['out_of_time'])} abstracts "
+    f"state an out-of-time test, and {fmt(G['validation_unclear'])} do not say how the models were "
+    f"validated."
+)
+```
+
+The last figure is the strongest finding of the review and needs care: an abstract that does not
+describe the validation design does not prove the study lacked one. The full-text core gives a
+better estimate (@tbl-core). Even so, the pattern supports the three gaps of the introduction.
+Comparisons of model families rarely share one out-of-time test, survival models remain a small
+part of a field dominated by classification, and the Brazilian literature has not yet used
+survival, deep learning or language models on listed firms.
+
+```{python}
+#| output: asis
+core_path = Path.cwd().parent / "slr" / "core_extraction.parquet"
+if core_path.exists():
+    ce = pd.read_parquet(core_path)
+    ok = ce[ce["ft_read_ok"]]
+    rows = []
+    for s, g in ok.groupby("stratum"):
+        rows.append({"Stratum": s, "Studies": len(g),
+                     "Out-of-time": int((g["ft_validation"] == "out_of_time").sum()),
+                     "Calibration reported": int(g["ft_calibration_reported"].sum()),
+                     "Uses text": int(g["ft_uses_text"].sum()), "Uses LLM": int(g["ft_uses_llm"].sum())})
+    t = pd.DataFrame(rows)
+    t.loc[len(t)] = ["All", len(ok), int((ok["ft_validation"] == "out_of_time").sum()),
+                     int(ok["ft_calibration_reported"].sum()), int(ok["ft_uses_text"].sum()),
+                     int(ok["ft_uses_llm"].sum())]
+    print(": Full-text core: validation design and reporting. {#tbl-core}\n")
+    print(table(t))
+else:
+    print(": Full-text core. {#tbl-core}\n")
+    print(table(None))
+```
+
+# Data
+
+## Sources
+
+All data are public. Financial statements come from the quarterly (ITR, 2011 to 2026) and annual
+(DFP, 2010 to 2026) filings in the CVM open-data portal [@cvmdados], using consolidated accounts and
+individual accounts when no consolidated set exists. Each filing carries its delivery date to the
+regulator, which is the date the information becomes available to the model; a restated filing
+counts only from its own delivery date. The auditor's report attached to each filing is read for
+the going-concern paragraph. Event filings (IPE, 2003 to 2026) give the material facts and the
+category of documents filed by companies in judicial or out-of-court recovery. Macroeconomic
+series come from the Central Bank's time-series system [@bcbsgs]: the Selic rate, 12-month IPCA
+inflation, the IBC-Br activity index, unemployment, the corporate non-performing-loan ratio over
+90 days and the average lending spread, each lagged by its publication delay.
+
+## Event base
+
+```{python}
+#| output: asis
+print(
+    f"An event is a filing for judicial recovery, a filing or court approval of out-of-court recovery, "
+    f"or a bankruptcy. Candidate events come from three sources: the registry status, the recovery "
+    f"category of event filings and material facts whose subject mentions recovery or bankruptcy. "
+    f"Material facts are adjudicated by a language model (Qwen3-235B, temperature zero) into filings by "
+    f"the company itself, ongoing proceedings, exits, or other matters such as a customer's or a "
+    f"subsidiary's recovery. An episode opens at the company's own filing and closes at its exit; a gap "
+    f"of more than a year, or an escalation from out-of-court to judicial recovery or to bankruptcy, "
+    f"opens a new episode. Liquidations are excluded. The base holds {fmt(N['events_all'])} events in "
+    f"{fmt(N['event_firms'])} non-financial firms, {fmt(N['events_window'])} of them from 2011; "
+    f"{fmt(N['left_truncated'])} firms already in recovery on 1 January 2011 are left out."
+)
+if not N["events_reviewed"]:
+    print(f"\n\n{fmt(None)} The event list is under review by the author against the source filings.")
+```
+
+## Panel
+
+```{python}
+#| output: asis
+print(
+    f"The unit is the firm-quarter. For each calendar quarter, each firm carries the latest information "
+    f"delivered before the quarter ends; rows whose latest statement is more than 550 days old are "
+    f"dropped. The panel holds {fmt(N['panel_rows'])} firm-quarters of {fmt(N['panel_firms'])} firms "
+    f"from {N['panel_first']} to {N['panel_last']}. Firms that left the market without an event are "
+    f"censored at their exit, so the sample has no survivorship bias. The training period ends in "
+    f"December 2018 ({fmt(N['train_rows'])} rows, {fmt(N['train_events'])} events); 2019 is an embargo "
+    f"year, so that no 12-month outcome window of the training rows overlaps the test; the test runs from "
+    f"2020 ({fmt(N['test_rows'])} rows, {fmt(N['test_events'])} events)."
+)
+```
+
+# Method
+
+## Predictors
+
+Accounting variables follow the literature [@altman1968; @ohlson1980; @shumway2001;
+@campbell2008]: working capital, retained earnings and EBIT over total assets, equity over total
+liabilities, leverage, current ratio, cash over assets, interest coverage, margin, revenue growth,
+size (assets deflated by IPCA), a negative-equity flag and a flag for a loss in the last four
+quarters. Flows are trailing twelve months. Disclosure behaviour adds the filing delay, the number
+of restatements in the last four quarters, the age of the latest information, the going-concern
+flag from a text rule on the auditor's report and an indicator of a previous recovery. The six
+macroeconomic series complete the base set.
+
+## Models
+
+Eight models are fitted on the same rows and the same predictors: the @altman2005 score with a
+logistic calibration; a discrete-time hazard logit [@shumway2001] with an L2 penalty chosen by
+temporal cross-validation; a Cox model [@cox1972] on landmark rows with a Breslow baseline
+[@breslow1974]; an XGBoost classifier of the 12-month PD and an XGBoost survival model with the Cox
+objective [@chen2016]; a random survival forest [@ishwaran2008]; DeepSurv [@katzman2018]; and
+DeepHit [@lee2018]. Survival models are fitted on stacked landmarks: each firm-quarter starts a
+follow-up that ends at the event, at the firm's exit or at 36 months, which gives PD curves at 12,
+24 and 36 months for every row. Hyper-parameters were set by a split inside the training years
+(fit to 2015, validate on 2017 and 2018); the test period was not used.
+
+## Evaluation
+
+For the 12-month PD we report the area under the ROC curve (AUC), the area under the
+precision-recall curve, the Kolmogorov-Smirnov statistic, the Brier score and the calibration
+intercept and slope [@vancalster2019]. For the term structure we report Harrell's [@harrell1982]
+and Uno's [@uno2011] concordance, time-dependent AUC at 12, 24 and 35 months and the integrated
+Brier score [@graf1999]. Intervals are 95% percentiles of a bootstrap that resamples firms, not
+rows, because rows of one firm are dependent. Differences in AUC are tested with DeLong's method
+[@delong1988], with Holm's correction [@holm1979] for the secondary comparisons.
+
+## Language-model signals
+
+```{python}
+#| output: asis
+print(
+    f"The subject line of each of the {fmt(N.get('signal_docs'))} material facts filed by the firms in "
+    f"the panel since 2010 is classified into eleven categories of distress: debt restructuring, "
+    f"covenant breach or waiver, missed payment, asset sale for liquidity, emergency capital, "
+    f"going-concern doubt, change of chief executive or chief financial officer, rating downgrade, the "
+    f"company's own recovery, a subsidiary's recovery, and sanction. The company's name, its trade names "
+    f"and its tax number are masked before the text reaches the model, so that the model's memory of what "
+    f"later happened to a known company cannot leak into the label. Announcements of the company's own "
+    f"recovery are kept for auditing the event base but never used as a predictor. A document enters the "
+    f"panel only from its delivery date; the features are counts of each category in the 4 and 12 months "
+    f"before the quarter. {fmt(N.get('signal_any'))} documents carry at least one signal."
+)
+```
+
+Reliability is measured three ways. A second model reads a random subsample of 3,000 documents and
+agreement is reported as Cohen's kappa per category. The author labelled 150 documents, sampled by
+category and period, which give precision and recall against a human reading. And 200 documents
+drawn at random are read in full, to measure what the subject line misses.
+
+## Pre-registered test of H2
+
+The primary test of H2 was fixed before the test period was opened: the discrete-time hazard
+logit with and without the language-model signals, compared by the AUC of the 12-month PD on the
+out-of-time test, with a one-sided DeLong test at the 5% level. All other models, metrics and
+horizons are secondary and carry Holm's correction. The going-concern flag from the text rule
+stays in the baseline, so that the treated arm adds only what the language model reads.
+
+# Results
+
+## Discrimination and calibration (H1, H3)
+
+```{python}
+#| output: asis
+print(": Out-of-time test, 12-month PD and term structure. {#tbl-h1}\n")
+print(table(N["test_h1"]))
+```
+
+```{python}
+#| output: asis
+print(": DeLong tests against the Altman score and the hazard logit, with Holm-adjusted p-values. {#tbl-delong}\n")
+print(table(N["test_delong"]))
+```
+
+## Language-model signals (H2)
+
+```{python}
+#| output: asis
+K = N["signals_kappa"]
+if K:
+    vals = [v for v in K.values() if v == v]
+    print(f"Agreement between the two readers ranges from kappa {fmt(min(vals), 2)} to {fmt(max(vals), 2)} "
+          f"across categories.")
+L = N["subject_loss"]
+if L:
+    a = L["loss"]["any"]
+    print(f" In the full-text sample ({fmt(L['read'])} documents read), the subject line finds "
+          f"{fmt(a['recall_of_subject'], 0, pct=True)} of the documents that carry a signal in the full text.")
+H2 = N["test_h2"]
+print("\n\n" + (f"Primary test: AUC {fmt(H2['auc_base'], 3)} without signals and {fmt(H2['auc_signals'], 3)} "
+                f"with them (one-sided DeLong p = {fmt(H2['p_one_sided'], 3)})." if H2 else fmt(None)))
+```
+
+# Agentic credit memo
+
+The product layer turns the models into a credit memo for a committee. An orchestrator calls
+deterministic tools (the firm's panel row, its PD curve, the main drivers, the macroeconomic
+context and the material facts delivered before the memo date) and two language-model subagents: a
+reader, which summarises the recent filings, and a writer, which drafts the memo. A deterministic
+critic then checks every number and every date in the draft against the values the tools returned;
+a memo with a number or a year that no tool produced is blocked. Language models are known to
+state plausible facts that no source supports [@ji2023]; the critic does not ask the model to
+behave, it removes the possibility.
+
+The agent was run on past cases twelve months before each event, using only what was public at
+that date. These runs illustrate the product and are not evidence for H2: the names are not masked
+in the memo, and the model may know how each story ended.
+
+# Corporate solution
+
+The design, called here a corporate credit monitor, follows from the regulatory frame and from what
+the experiment shows. It watches the CVM filings of the firms in a client's portfolio every day,
+recomputes a monthly PD curve per firm, raises an alert when a distress signal appears or the PD
+crosses a threshold set by the client's credit policy, and drafts a memo with the agentic layer for
+the credit committee. Every number in a memo traces back to a filing or a model output. It runs in
+the client's environment, and the decision stays with people.
+
+The monitor maps directly onto Resolution 4,966: the 12-month PD feeds first-stage provisions, the
+36-month curve the lifetime loss of the second stage, and the alerts are candidates for the
+significant-increase-in-credit-risk test that moves an exposure between them. A typical engagement
+starts with a diagnosis of the client's portfolio and data, runs a pilot of six to eight weeks on
+that portfolio, and continues with monthly monitoring.
+
+# Limitations
+
+The number of events is small, so intervals are wide and the comparison rests on the intervals,
+not on the ranking. Market data (share prices, credit spreads) were left out because no public,
+stable source covers the whole panel. The event base depends on how firms describe their own
+filings; the list was reviewed by the author, and a narrow definition (judicial recovery and
+bankruptcy only) is reported as a robustness check. Screening and extraction in the review were
+done by language models; their agreement is reported, but no human screened the full set, and
+studies without an open-access text enter only through their abstracts. The signals are read from
+subject lines; the full-text sample measures what that costs.
+
+# Conclusion
+
+`{python} fmt(None)`
+
+# Data and code availability {.unnumbered}
+
+Code, derived data, the cached answers of every language-model call, tests and the review's records
+are in the public repository `rhozon/corporate-credit-early-warning`. Raw CVM and Central Bank files
+are downloaded by the code. Language models were used as instruments of the method, as described in
+Sections 3 to 5 and 7; the models, versions and settings are recorded in the repository.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

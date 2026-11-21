@@ -8,3 +8,7 @@ data/raw/
 data/pit.parquet
 cache/llm/
 slr/fulltext/
+paper/*.pdf
+paper/*.tex
+paper/*_files/
+paper/.quarto/
