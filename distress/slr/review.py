@@ -224,12 +224,21 @@ Answer only JSON: {"items": [{"i": 1, "families": [...], "validation": "...", "c
 "uses_text": false, "uses_llm": false, "n_events": null}, ...]}."""
 
 
+def as_list(x) -> list[str]:
+    """A list of vocabulary terms, also when the model writes them as one string ("survival, ml_trees")."""
+    if x is None:
+        return []
+    if isinstance(x, str):
+        return [t for t in re.split(r"[,;|/\s]+", x.strip()) if t]
+    return [str(t).strip() for t in x if str(t).strip()]
+
+
 def parse_extract(obj, n: int) -> list[dict]:
     blank = {"families": [], "validation": "unclear", "country": "unclear", "unit": "unclear",
              "uses_text": False, "uses_llm": False, "n_events": None}
     out = [dict(blank) for _ in range(n)]
     for it in (obj.get("items", []) if isinstance(obj, dict) else []):
-        fam = list(it.get("families") or [])
+        fam = as_list(it.get("families"))
         if set(fam) - FAMILIES or it.get("validation", "unclear") not in VALIDATION:
             raise ValueError(f"out of vocabulary: {it}")
         i = int(it.get("i", 0))

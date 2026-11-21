@@ -167,3 +167,9 @@ def test_bibtex_contains_only_verified_records(monkeypatch):
     assert "Real paper" in bib and "10.1/real" in bib
     assert "10.1/fake" not in bib
     assert bib.count("@article") == 1
+
+
+def test_extraction_accepts_families_written_as_text():
+    out = review.parse_extract({"items": [{"i": 1, "families": "survival, ml_trees", "validation": "unclear"},
+                                          {"i": 2, "families": "survival", "validation": "out_of_time"}]}, n=2)
+    assert out[0]["families"] == ["survival", "ml_trees"] and out[1]["families"] == ["survival"]

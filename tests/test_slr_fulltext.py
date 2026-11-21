@@ -141,3 +141,9 @@ def test_fulltext_parser_validates_vocabularies_and_types():
         ft.parse_fulltext({"methods": ["astrology"], "validation": "unclear"})
     with pytest.raises(ValueError):
         ft.parse_fulltext({"methods": [], "validation": "sometimes"})
+
+
+def test_fulltext_parser_accepts_methods_written_as_text():
+    assert ft.parse_fulltext({"methods": "survival", "validation": "unclear"})["methods"] == ["survival"]
+    assert ft.parse_fulltext({"methods": "statistical, ml_trees; other", "validation": "unclear"})["methods"] == \
+        ["statistical", "ml_trees", "other"]

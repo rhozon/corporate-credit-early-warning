@@ -17,7 +17,7 @@ from urllib.parse import urljoin
 
 import pandas as pd
 
-from .review import FAMILIES, UA, UNITS, VALIDATION
+from .review import FAMILIES, UA, UNITS, VALIDATION, as_list
 
 STRATA = ("survival", "deep_learning", "text_llm", "brazil", "out_of_time")
 MIN_CHARS = 12_000  # below this a page is a landing page or an abstract, not a paper
@@ -238,7 +238,7 @@ def _float(x):
 
 def parse_fulltext(obj) -> dict:
     obj = obj if isinstance(obj, dict) else {}
-    methods = list(obj.get("methods") or [])
+    methods = as_list(obj.get("methods"))
     validation = obj.get("validation") or "unclear"
     if set(methods) - FAMILIES or validation not in VALIDATION:
         raise ValueError(f"out of vocabulary: methods={methods} validation={validation}")
