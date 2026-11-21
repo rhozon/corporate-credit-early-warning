@@ -1,0 +1,100 @@
+{
+  "sample": 200,
+  "read": 197,
+  "model": "google/gemma-4-26b-a4b-it",
+  "seed": 2026,
+  "kappa": {
+    "debt_restructuring": 0.31158998252766457,
+    "covenant": 0.0,
+    "missed_payment": 0.0,
+    "asset_sale_liquidity": 0.8094514301506149,
+    "emergency_capital": 0.7676886792452831,
+    "going_concern": NaN,
+    "ceo_cfo_change": 0.861495195687837,
+    "rating_downgrade": NaN,
+    "own_recovery": 0.23643410852713176,
+    "subsidiary_recovery": 0.0,
+    "sanction": 0.20427005193306402
+  },
+  "loss": {
+    "debt_restructuring": {
+      "full_text": 14,
+      "subject": 4,
+      "both": 3,
+      "recall_of_subject": 0.21428571428571427
+    },
+    "covenant": {
+      "full_text": 1,
+      "subject": 0,
+      "both": 0,
+      "recall_of_subject": 0.0
+    },
+    "missed_payment": {
+      "full_text": 1,
+      "subject": 0,
+      "both": 0,
+      "recall_of_subject": 0.0
+    },
+    "asset_sale_liquidity": {
+      "full_text": 21,
+      "subject": 20,
+      "both": 17,
+      "recall_of_subject": 0.8095238095238095
+    },
+    "emergency_capital": {
+      "full_text": 11,
+      "subject": 7,
+      "both": 7,
+      "recall_of_subject": 0.6363636363636364
+    },
+    "going_concern": {
+      "full_text": 0,
+      "subject": 0,
+      "both": 0,
+      "recall_of_subject": NaN
+    },
+    "ceo_cfo_change": {
+      "full_text": 12,
+      "subject": 11,
+      "both": 10,
+      "recall_of_subject": 0.8333333333333334
+    },
+    "rating_downgrade": {
+      "full_text": 0,
+      "subject": 0,
+      "both": 0,
+      "recall_of_subject": NaN
+    },
+    "own_recovery": {
+      "full_text": 14,
+      "subject": 2,
+      "both": 2,
+      "recall_of_subject": 0.14285714285714285
+    },
+    "subsidiary_recovery": {
+      "full_text": 2,
+      "subject": 0,
+      "both": 0,
+      "recall_of_subject": 0.0
+    },
+    "sanction": {
+      "full_text": 5,
+      "subject": 4,
+      "both": 1,
+      "recall_of_subject": 0.2
+    },
+    "any": {
+      "full_text": 67,
+      "subject": 47,
+      "both": 42,
+      "recall_of_subject": 0.6268656716417911
+    }
+  },
+  "checks": {
+    "own_recovery_full_text_inside_open_episode": 13,
+    "own_recovery_full_text": 14,
+    "debt_restructuring_full_text_inside_open_episode": 2,
+    "debt_restructuring_full_text": 14,
+    "note": "Full-text flags of the company's own recovery come almost all from firms already in an open recovery episode, whose filings restate that status; they are not new information."
+  }
+}
