@@ -72,3 +72,53 @@ def test_gold_sheet_has_a_column_per_category(tmp_path):
     assert {"id", "empresa", "data", "assunto", "link"} <= set(sheet.columns)
     assert all(signals.LABELS_PT[c] in sheet.columns for c in signals.CATEGORIES)
     assert len(sheet) == 3
+
+
+def test_subject_prompt_is_unchanged_so_cached_answers_stay_valid():
+    import hashlib
+
+    assert hashlib.sha256(signals.SYSTEM.encode()).hexdigest() == \
+        "db7259b5ab34bcc11e843e5aa758b495779931d1d9ab4ee48285760771d61c9f"
+
+
+def test_full_text_prompt_has_the_same_categories():
+    for c in signals.CATEGORIES:
+        assert f"- {c}:" in signals.DOC_SYSTEM
+    assert "texto completo" in signals.DOC_SYSTEM
+
+
+def test_full_text_classification_masks_the_company(tmp_path):
+    t = Transport({"labels": ["covenant"]})
+    llm = LLM("vendor/m", cache_dir=tmp_path, transport=t)
+    d = docs(2)
+    texts = {0: "A ACME S.A. (CNPJ 11.222.333/0001-44) obteve waiver de covenant.", 1: None}
+    out = signals.classify_fulltext(d, texts, llm)
+    assert "ACME" not in t.calls[0]["messages"][1]["content"] and len(t.calls) == 1
+    assert out.loc[0, "covenant"] == 1 and out.loc[0, "none"] == 0
+    assert out["read_ok"].tolist() == [True, False]
+
+
+def test_subject_loss_is_measured_against_the_full_text():
+    cols = signals.CATEGORIES + ["none"]
+    full = pd.DataFrame(0, index=range(4), columns=cols)
+    subj = full.copy()
+    full.loc[[0, 1, 2], "covenant"] = 1
+    subj.loc[[0, 3], "covenant"] = 1
+    full.loc[3, "none"] = 1
+    subj.loc[[1, 2], "none"] = 1
+    loss = signals.subject_loss(subj, full)
+    assert loss["covenant"] == {"full_text": 3, "subject": 2, "both": 1, "recall_of_subject": pytest.approx(1 / 3)}
+    assert loss["any"]["full_text"] == 3 and loss["any"]["both"] == 1
+
+
+def test_material_fact_text_is_cached(tmp_path, monkeypatch):
+    calls = []
+
+    def get(url):
+        calls.append(url)
+        return "text/html", b"%PDF-1.5 fake"
+
+    monkeypatch.setattr(signals, "_pdf_text", lambda b: "Fato relevante sobre renegociacao de dividas. " * 5)
+    assert signals.fetch_doc("http://cvm/1", tmp_path, "1", get=get).startswith("Fato relevante")
+    assert signals.fetch_doc("http://cvm/1", tmp_path, "1", get=get).startswith("Fato relevante")
+    assert calls == ["http://cvm/1"]

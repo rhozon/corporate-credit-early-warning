@@ -106,6 +106,85 @@ def classify_subjects(docs: pd.DataFrame, llm: LLM, batch: int = 25, workers: in
     return out
 
 
+# Full text of a sample of documents, to measure what the subject line alone misses. The category
+# block is cut from SYSTEM, which stays byte-identical so the cached subject answers remain valid.
+DOC_SYSTEM = ("Você lê o texto completo de um Fato Relevante de companhia aberta brasileira. O nome da empresa "
+              "foi trocado por [EMPRESA].\nMarque as categorias que o documento indica. Pode haver mais de uma. "
+              'Use "none" se nenhuma se aplica.\n\n'
+              + SYSTEM[SYSTEM.index("Categorias:"):SYSTEM.index("Responda")]
+              + 'Responda só com JSON: {"labels": ["..."]}.')
+
+
+def _pdf_text(content: bytes) -> str:
+    from ..slr.fulltext import _pdf_text as pdf
+
+    return pdf(content)
+
+
+def fetch_doc(url: str, cache_dir: Path, key: str, get=None) -> str | None:
+    """Text of a filing from the CVM document server (a PDF, whatever the headers say), cached."""
+    from ..slr.fulltext import _get, html_text
+
+    path = Path(cache_dir) / f"{key}.txt"
+    if path.exists():
+        t = path.read_text(encoding="utf-8")
+        return t or None
+    try:
+        ctype, content = (get or _get)(url)
+        is_pdf = content[:5] == b"%PDF-" or "pdf" in ctype.lower()
+        text = _pdf_text(content) if is_pdf else html_text(content.decode("utf-8", errors="replace"))
+    except Exception:
+        text = ""
+    text = re.sub(r"\s+", " ", text).strip().encode("utf-8", "ignore").decode("utf-8")
+    text = text if len(text) >= 100 else ""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return text or None
+
+
+def _classify_doc(llm: LLM, text: str) -> set:
+    try:
+        obj = llm.complete(DOC_SYSTEM, text, schema={"type": "object"})
+        labels = obj.get("labels", []) if isinstance(obj, dict) else []
+        return parse_batch({"items": [{"i": 1, "labels": labels}]}, 1)[0]
+    except ValueError:
+        return {"none"}
+
+
+def classify_fulltext(docs: pd.DataFrame, texts: dict, llm: LLM, workers: int = 2,
+                      head: int = 12_000, tail: int = 3_000) -> pd.DataFrame:
+    """Same categories as ``classify_subjects``, read from each document's full text (masked, trimmed)."""
+    rows = list(docs.itertuples())
+
+    def one(r):
+        t = texts.get(r.Index)
+        if not t:
+            return None
+        t = t if len(t) <= head + tail else t[:head] + "\n[...]\n" + t[-tail:]
+        return _classify_doc(llm, mask(t, name_variants(r.name), r.cnpj))
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        labels = list(ex.map(one, rows))
+    out = docs[["cd_cvm", "delivered"]].copy().reset_index(drop=True)
+    for c in CATEGORIES + ["none"]:
+        out[c] = [int(lab is not None and c in lab) for lab in labels]
+    out["read_ok"] = [lab is not None for lab in labels]
+    return out
+
+
+def subject_loss(subject: pd.DataFrame, full: pd.DataFrame) -> dict:
+    """Per category: documents flagged from the full text, from the subject, by both, and the share of
+    full-text flags the subject also finds."""
+    def row(f, s):
+        n = int(f.sum())
+        return {"full_text": n, "subject": int(s.sum()), "both": int((f & s).sum()),
+                "recall_of_subject": float((f & s).sum() / n) if n else float("nan")}
+
+    out = {c: row(full[c].values == 1, subject[c].values == 1) for c in CATEGORIES}
+    out["any"] = row(full[CATEGORIES].values.sum(axis=1) > 0, subject[CATEGORIES].values.sum(axis=1) > 0)
+    return out
+
+
 def agreement(a: pd.DataFrame, b: pd.DataFrame) -> dict:
     from sklearn.metrics import cohen_kappa_score
 

@@ -231,6 +231,33 @@ def cmd_slr(a):
         print(stats)
 
 
+def cmd_fulltext_sample(a):
+    """A random sample of material facts read in full, to measure what the subject line misses."""
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .llm import signals
+
+    docs = pd.read_parquet(DATA / "signals_primary_docs.parquet")
+    cnpj = cvm.read_cad().drop_duplicates("cd_cvm").set_index("cd_cvm")["cnpj"]
+    sample = docs.sample(n=a.n, random_state=2026).copy()
+    sample["cnpj"] = sample["cd_cvm"].map(cnpj).fillna("")
+    cache = DATA / "raw" / "ipe_text"
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        got = list(ex.map(lambda r: signals.fetch_doc(r.link, cache, str(r.doc_id)), sample.itertuples()))
+    texts = dict(zip(sample.index, got))
+    full = signals.classify_fulltext(sample, texts, llm(PRIMARY, max_tokens=400), workers=a.workers)
+    subj = sample[signals.CATEGORIES + ["none"]].reset_index(drop=True)
+    ok = full["read_ok"].values
+    loss = signals.subject_loss(subj[ok], full[ok])
+    res = {"sample": a.n, "read": int(ok.sum()), "model": PRIMARY[0], "seed": 2026,
+           "kappa": signals.agreement(subj[ok], full[ok]), "loss": loss}
+    (ROOT / "results").mkdir(exist_ok=True)
+    (ROOT / "results" / "subject_vs_fulltext.json").write_text(json.dumps(res, indent=2, default=float))
+    full.assign(doc_id=sample["doc_id"].values).to_parquet(DATA / "signals_fulltext_sample.parquet", index=False)
+    print({k: res[k] for k in ("sample", "read")}, "any:", loss["any"])
+
+
 def cmd_refs(a):
     """paper/references.bib from Crossref-verified DOIs only: the cited works in refs_seed.csv,
     resolved by bibliographic search, and the studies of the review's full-text core."""
@@ -297,6 +324,10 @@ def main(argv=None):
     sl.set_defaults(fn=cmd_slr)
     rf = sub.add_parser("refs")
     rf.set_defaults(fn=cmd_refs)
+    fs = sub.add_parser("fulltext-sample")
+    fs.add_argument("--n", type=int, default=200)
+    fs.add_argument("--workers", type=int, default=2)
+    fs.set_defaults(fn=cmd_fulltext_sample)
     va = sub.add_parser("validate")
     va.add_argument("--data-end", default="2026-11-20")
     va.add_argument("--fast", action="store_true")
