@@ -28,11 +28,20 @@ def surv_target(rows: pd.DataFrame, horizon_end: pd.Timestamp, cap: float = 36.0
 
 
 class Prep:
-    """Winsorise at the 1st and 99th percentiles, impute the median, standardise. Fit on train only."""
+    """Winsorise at the 1st and 99th percentiles, impute the median, standardise. Fit on train only.
+
+    Columns in ``keep_tails`` are not winsorised: for a count that is non-zero in under 1% of rows, the
+    99th percentile is zero and clipping would erase it.
+    """
+
+    def __init__(self, keep_tails=()):
+        self.keep_tails = list(keep_tails)
 
     def fit(self, X: pd.DataFrame) -> "Prep":
         X = X.astype(float)
         self.lo, self.hi = X.quantile(0.01), X.quantile(0.99)
+        keep = [c for c in self.keep_tails if c in X.columns]
+        self.lo[keep], self.hi[keep] = -np.inf, np.inf
         Xc = X.clip(self.lo, self.hi, axis=1)
         self.med = Xc.median()
         Xc = Xc.fillna(self.med)
@@ -68,8 +77,8 @@ def breslow(risk_train: np.ndarray, duration: np.ndarray, event: np.ndarray, tim
 class Model:
     name = "base"
 
-    def __init__(self, features=None, seed: int = 2026, fast: bool = False):
-        self.features, self.seed, self.fast = features, seed, fast
+    def __init__(self, features=None, seed: int = 2026, fast: bool = False, keep_tails=()):
+        self.features, self.seed, self.fast, self.keep_tails = features, seed, fast, tuple(keep_tails)
 
     def fit(self, train: pd.DataFrame, horizon_end: pd.Timestamp) -> "Model":
         raise NotImplementedError

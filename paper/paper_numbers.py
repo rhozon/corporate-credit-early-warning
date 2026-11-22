@@ -45,11 +45,12 @@ def load() -> dict:
     else:
         n["review"] = None
 
-    p = pd.read_parquet(ROOT / "data" / "panel.parquet", columns=["q", "cd_cvm", "event"])
+    p = pd.read_parquet(ROOT / "data" / "panel.parquet", columns=["q", "cd_cvm", "event", "y12"])
     n["panel_rows"], n["panel_firms"] = len(p), p["cd_cvm"].nunique()
     n["panel_first"], n["panel_last"] = p["q"].min().date(), p["q"].max().date()
     train, test = p[p["q"] <= "2018-12-31"], p[p["q"] >= "2020-01-01"]
     n["train_rows"], n["train_events"] = len(train), int(train["event"].sum())
+    n["train_rate12"] = float(train["y12"].mean())
     n["test_rows"], n["test_events"] = len(test), int(test["event"].sum())
 
     n["prisma"] = _json("slr/prisma.json")
@@ -58,6 +59,7 @@ def load() -> dict:
     n["signals_kappa"] = _json("results/llm_agreement.json")
     n["subject_loss"] = _json("results/subject_vs_fulltext.json")
     n["llm_models"] = _json("results/llm_models.json")
+    n["memos"] = _json("results/memos/summary.json")
     # Document-level labels are private (they read as alerts on named firms); the counts are public.
     counts = _json("results/signal_counts.json") or {}
     n["signal_docs"], n["signal_any"] = counts.get("documents"), counts.get("any_signal")

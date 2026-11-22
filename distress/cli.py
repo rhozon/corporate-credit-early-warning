@@ -448,6 +448,15 @@ def cmd_test(a):
     reliable = experiment.reliable_signals({c: v["kappa"] for c, v in agree.items()})
     h2r = experiment.h2_test(train, test, experiment.BASE, reliable, fit_end, eval_end)
     (out / "test_h2_reliable.json").write_text(json.dumps(h2r | {"signals": reliable}, indent=2, default=float))
+    # Exploratory, added after the test was opened: winsorising at the 99th percentile turned the rarest signal
+    # counts into constant zeros, so the registered tests never saw them. The same tests with the tails kept:
+    flat = [s for s in experiment.SIGNALS if train[s].quantile(0.01) == train[s].quantile(0.99)]
+    h2x = experiment.h2_test(train, test, experiment.BASE, experiment.SIGNALS, fit_end, eval_end,
+                             keep_tails=experiment.SIGNALS)
+    h2xr = experiment.h2_test(train, test, experiment.BASE, reliable, fit_end, eval_end, keep_tails=reliable)
+    (out / "test_h2_exploratory.json").write_text(json.dumps(
+        {"status": "exploratory, after the test was opened", "flat_after_winsorising": flat, "all": h2x,
+         "reliable": h2xr}, indent=2, default=float))
     res_s, preds_s = experiment.run(train, test, experiment.BASE + experiment.SIGNALS, list(MODELS), fit_end,
                                     eval_end)
     preds_s.to_parquet(PRIVATE / "test_preds_signals.parquet", index=False)

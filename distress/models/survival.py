@@ -16,13 +16,17 @@ class Cox(Model):
 
         self.prep = Prep().fit(train[self.features])
         d, e = surv_target(train, horizon_end)
-        df = pd.DataFrame(self.prep.transform(train[self.features]), columns=self.features)
+        X = self.prep.transform(train[self.features])
+        # A column left constant by winsorising carries nothing and makes the Newton steps singular.
+        self.keep = [i for i in range(X.shape[1]) if np.ptp(X[:, i]) > 0]
+        df = pd.DataFrame(X[:, self.keep], columns=[self.features[i] for i in self.keep])
         df["duration"], df["event"] = d, e
         self.cph = CoxPHFitter(penalizer=0.1).fit(df, "duration", "event")
         return self
 
     def _X(self, rows):
-        return pd.DataFrame(self.prep.transform(rows[self.features]), columns=self.features)
+        X = self.prep.transform(rows[self.features])[:, self.keep]
+        return pd.DataFrame(X, columns=[self.features[i] for i in self.keep])
 
     def risk(self, rows):
         return np.log(self.cph.predict_partial_hazard(self._X(rows)).values)

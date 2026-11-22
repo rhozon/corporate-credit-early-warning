@@ -112,20 +112,20 @@ def delong_table(preds: pd.DataFrame, references=REFERENCES) -> pd.DataFrame:
 
 
 def h2_test(train: pd.DataFrame, test: pd.DataFrame, base: list[str], signals: list[str], fit_end: pd.Timestamp,
-            eval_end: pd.Timestamp, model: str = "logit_hazard", seed: int = 2026) -> dict:
+            eval_end: pd.Timestamp, model: str = "logit_hazard", seed: int = 2026, keep_tails=()) -> dict:
     """Pre-registered primary test of H2: the discrete-time hazard logit with and without the language-model
     signals, AUC of the 12-month PD on the out-of-time rows, one-sided DeLong test (signals better)."""
     complete = (pd.to_datetime(test["q"]) + pd.DateOffset(months=12) <= eval_end).values
     y = test["y12"].values[complete]
     pds = {}
     for arm, feats in (("base", base), ("signals", base + signals)):
-        m = MODELS[model](features=feats, seed=seed, fast=False).fit(train, horizon_end=fit_end)
+        m = MODELS[model](features=feats, seed=seed, fast=False, keep_tails=keep_tails).fit(train, horizon_end=fit_end)
         pds[arm] = m.pd(test)["pd12"].values[complete]
     diff, z, p = stats.delong(y, pds["signals"], pds["base"])
     return {"model": model, "n": int(complete.sum()), "events": int(y.sum()),
             "auc_base": evaluate.metrics(y, pds["base"])["auc"],
             "auc_signals": evaluate.metrics(y, pds["signals"])["auc"],
-            "auc_diff": diff, "z": z, "p_one_sided": p, "signals": list(signals)}
+            "auc_diff": diff, "z": z, "p_one_sided": p, "signals": list(signals), "keep_tails": list(keep_tails)}
 
 
 def calibration_by_horizon(preds: pd.DataFrame, horizons=(12, 24, 36)) -> pd.DataFrame:

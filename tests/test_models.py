@@ -80,3 +80,36 @@ def test_model_is_deterministic_under_seed(name, data):
 
 def test_altman_uses_its_own_ratios():
     assert MODELS["altman"](features=None).features == ["wc_ta", "re_ta", "ebit_ta", "eq_tl"]
+
+
+def test_cox_fits_when_a_feature_is_constant_after_winsorising():
+    p = synthetic_panel(n_firms=150, seed=3)
+    rare = np.zeros(len(p))
+    rare[:5] = 2.0  # under 1% of rows: the 99th-percentile clip turns the column into zeros
+    p["rare"] = rare
+    m = MODELS["cox"](features=["x1", "x2", "rare"]).fit(p, horizon_end=pd.Timestamp("2019-12-31"))
+    assert np.isfinite(m.pd(p.head(20)).values).all()
+
+
+def test_prep_can_leave_the_tails_of_named_columns_alone():
+    from distress.models.base import Prep
+
+    X = pd.DataFrame({"a": np.r_[np.zeros(995), np.full(5, 3.0)], "b": np.r_[np.zeros(995), np.full(5, 3.0)]})
+    out = Prep(keep_tails=["b"]).fit(X).transform(X)
+    assert np.ptp(out[:, 0]) == 0  # a rare count is clipped away by default
+    assert np.ptp(out[:, 1]) > 0   # and survives when its tails are kept
+
+
+def test_h2_can_be_run_without_clipping_the_signals():
+    from distress import experiment
+
+    p = synthetic_panel(n_firms=300, seed=4)
+    p["sig_rare"] = 0.0
+    hit = p.index[p["y12"] == 1][:6]
+    p.loc[hit, "sig_rare"] = 1.0  # rare and informative
+    tr, te = p[p["q"] <= "2015-12-31"], p[p["q"] >= "2016-03-31"]
+    clipped = experiment.h2_test(tr, te, ["x1"], ["sig_rare"], pd.Timestamp("2016-12-31"), pd.Timestamp("2019-12-31"))
+    kept = experiment.h2_test(tr, te, ["x1"], ["sig_rare"], pd.Timestamp("2016-12-31"), pd.Timestamp("2019-12-31"),
+                              keep_tails=["sig_rare"])
+    assert clipped["auc_signals"] == pytest.approx(clipped["auc_base"])  # the signal never reached the model
+    assert kept["keep_tails"] == ["sig_rare"]

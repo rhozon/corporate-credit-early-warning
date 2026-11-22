@@ -40,7 +40,7 @@ class HazardLogit(Model):
     grid = (0.01, 0.1, 1.0)
 
     def fit(self, train, horizon_end):
-        self.prep = Prep().fit(train[self.features])
+        self.prep = Prep(self.keep_tails).fit(train[self.features])
         X, y = self.prep.transform(train[self.features]), train["event"].values
         C = 1.0 if self.fast else _temporal_cv_C(train, X, y, self.grid)
         self.C = C

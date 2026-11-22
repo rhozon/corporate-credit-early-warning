@@ -466,9 +466,33 @@ a memo with a number or a year that no tool produced is blocked. Language models
 state plausible facts that no source supports [@ji2023]; the critic does not ask the model to
 behave, it removes the possibility.
 
-The agent was run on past cases twelve months before each event, using only what was public at
-that date. These runs illustrate the product and are not evidence for H2: the names are not masked
-in the memo, and the model may know how each story ended.
+```{python}
+#| output: asis
+M = N["memos"]
+if M:
+    by = {m["company"].split()[0].title() if not m["company"].startswith("GRUPO") else "Casas Bahia": m for m in M}
+    rate = N["train_rate12"]
+    hi = max(M, key=lambda m: m["pd12"])
+    hi_name = [k for k, v in by.items() if v is hi][0]
+    others = [k for k, v in by.items() if v is not hi]
+    print(f"The agent was run on {fmt(len(M))} past cases ({', '.join(by)}), each as of twelve months before "
+          f"the filing, with the hazard logit fitted on the training years and only what was public on that "
+          f"date. The registry name, which now carries the company's later status, is cut back to the name "
+          f"alone, and other listed companies named in a memo are masked in the published copy. All "
+          f"{fmt(sum(not m['blocked'] for m in M))} memos passed the critic. On the first run it blocked three, "
+          f"each for a value the memo had copied correctly: a negative rate read without its sign, and a "
+          f"crop year quoted from a filing subject; both cases are now tested. A year before the filing, the "
+          f"12-month PD of {hi_name} was {fmt(hi['pd12'], 1, pct=True)}, about {fmt(hi['pd12'] / rate, 0)} times "
+          f"the average 12-month rate in the training years ({fmt(rate, 1, pct=True)}); for "
+          f"{', '.join(others[:-1])} and {others[-1]} it was below that average "
+          f"({', '.join(fmt(by[k]['pd12'], 1, pct=True) for k in others)}). Americanas filed days after "
+          f"disclosing an accounting inconsistency, so the statements a model could read a year earlier did not "
+          f"show the problem. These runs illustrate the product and are not evidence for H2: the names are not "
+          f"masked in the memo, and the model may know how each story ended. The memos, in Portuguese, are in "
+          f"`results/memos/`.")
+else:
+    print(f"{fmt(None)} Memos on past cases.")
+```
 
 # Corporate solution
 
