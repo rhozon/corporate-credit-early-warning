@@ -352,6 +352,47 @@ def cmd_apply_review(a):
     print(reviewed["review"].value_counts().to_dict(), "| removed:", len(draft) - len(reviewed))
 
 
+def cmd_suggest_review(a):
+    """A suggested answer beside each event of the review sheet: a language model reads the filings near
+    the event date. The author's S/N column is left alone; a copy of the suggestions goes to data/private."""
+    import hashlib
+    from concurrent.futures import ThreadPoolExecutor
+
+    from . import review_aid
+    from .llm import signals
+
+    draft = pd.read_csv(DATA / "events_draft.csv", parse_dates=["event_date", "episode_end"])
+    ev = draft[draft["event_date"] >= pd.Timestamp("2008-01-01")]
+    adj = pd.read_csv(DATA / "events_adjudicated.csv", parse_dates=["date"])
+    model = llm(SECONDARY, max_tokens=800)
+    cache = DATA / "raw" / "ipe_text"
+    cnpj = cvm.read_cad().drop_duplicates("cd_cvm").set_index("cd_cvm")["cnpj"]
+
+    def one(r):
+        parts = []
+        for d in review_aid.candidate_docs(r, adj, k=a.k).itertuples():
+            text = signals.fetch_doc(d.link, cache, "ev_" + hashlib.md5(d.link.encode()).hexdigest())
+            if text:
+                parts.append(f"--- Documento entregue em {d.date:%d/%m/%Y}: {d.evidence}\n{text[:a.chars]}")
+        if not parts:
+            return "incerto: nenhum documento legível perto da data"
+        user = review_aid.suggest_user(r["name"], cnpj.get(int(r["cd_cvm"])), r["event_date"],
+                                       r["event_type"], parts)
+        try:
+            obj = model.complete(review_aid.SUGGEST_SYSTEM, user, schema={"type": "object"})
+        except Exception as e:  # one unreadable answer should not stop the other events
+            return f"incerto: leitura falhou ({type(e).__name__})"
+        return review_aid.suggestion_text(r["event_date"], review_aid.parse_suggestion(obj))
+
+    with ThreadPoolExecutor(max_workers=a.workers) as ex:
+        texts = list(ex.map(one, [r for _, r in ev.iterrows()]))
+    out = ev[["cd_cvm", "name", "event_date", "event_type"]].assign(suggestion=texts)
+    out.to_csv(PRIVATE / "review_suggestions.csv", index=False)
+    keyed = {(int(r.cd_cvm), r.event_date.date(), r.event_type): r.suggestion for r in out.itertuples()}
+    print("written:", review_aid.write_suggestions(Path(a.sheet), keyed), "of", len(out))
+    print(out["suggestion"].str.extract(r"^(S|N, data|N, quem|incerto)")[0].value_counts().to_dict())
+
+
 def cmd_test(a):
     """Opens the out-of-time test: H1 (all models), H2 (pre-registered primary test and ablations), H3.
 
@@ -448,6 +489,12 @@ def main(argv=None):
     gd.add_argument("--n", type=int, default=150)
     gd.add_argument("--workers", type=int, default=2)
     gd.set_defaults(fn=cmd_gold)
+    sr = sub.add_parser("suggest-review")
+    sr.add_argument("sheet")
+    sr.add_argument("--k", type=int, default=4)
+    sr.add_argument("--chars", type=int, default=5000)
+    sr.add_argument("--workers", type=int, default=2)
+    sr.set_defaults(fn=cmd_suggest_review)
     sl = sub.add_parser("slr")
     sl.add_argument("step", choices=["screen", "combine", "extract", "core"])
     sl.add_argument("--which", choices=["primary", "secondary"], default="primary")
