@@ -91,3 +91,23 @@ def test_survival_metrics_reward_correct_ranking():
     assert good["c_uno"] > 0.65
     assert good["auc_t12"] > 0.65
     assert good["ibs"] < bad["ibs"]
+
+
+def test_a_test_event_at_the_end_of_training_follow_up_does_not_break_the_censoring_weights():
+    # Training outcomes are censored at 36 months, so the censoring curve reaches zero there; a test event at
+    # exactly 36 months lies past every scored horizon and must count only as a firm still at risk before it.
+    rng = np.random.default_rng(5)
+    n = 400
+    risk = rng.normal(size=n)
+    t_event = rng.exponential(scale=40 * np.exp(-risk))
+    d = np.minimum(t_event, 36.0)
+    e = (t_event <= 36.0).astype(int)
+    pdc = pd.DataFrame({f"pd{h}": 1 - np.exp(-h / (40 * np.exp(-risk))) for h in (12, 24, 36)})
+    d_te, e_te = d.copy(), e.copy()
+    d_te[0], e_te[0] = 36.0, 1
+    out = evaluate.surv_metrics(d, e, d_te, e_te, risk, pdc)
+    d_ce, e_ce = d_te.copy(), e_te.copy()
+    d_ce[0], e_ce[0] = 35.999, 0
+    ref = evaluate.surv_metrics(d, e, d_ce, e_ce, risk, pdc)
+    assert np.isfinite(out["auc_t12"]) and np.isfinite(out["ibs"])
+    assert out["auc_t12"] == pytest.approx(ref["auc_t12"]) and out["ibs"] == pytest.approx(ref["ibs"])

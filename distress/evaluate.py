@@ -46,8 +46,16 @@ def surv_metrics(d_train, e_train, d_test, e_test, risk, pd_curve: pd.DataFrame)
 
     ytr, yte = _surv(e_train, d_train), _surv(e_test, d_test)
     risk = np.asarray(risk, float)
-    out = {"c_harrell": concordance_index_censored(yte["event"], yte["time"], risk)[0],
-           "c_uno": concordance_index_ipcw(ytr, yte, risk, tau=TIMES[-1])[0]}
+    out = {"c_harrell": concordance_index_censored(yte["event"], yte["time"], risk)[0]}
+    # The censoring curve estimated on training falls to zero at the last training time (outcomes are capped at
+    # 36 months). A test event at or after it lies past every scored horizon, so it is counted as censored just
+    # before that time: still at risk at every horizon, which is all the estimators use it for.
+    last = float(np.max(ytr["time"]))
+    late = yte["event"] & (yte["time"] >= last)
+    if late.any():
+        yte = yte.copy()
+        yte["event"][late], yte["time"][late] = False, np.nextafter(last, 0)
+    out["c_uno"] = concordance_index_ipcw(ytr, yte, risk, tau=TIMES[-1])[0]
     pdm = pd_curve[["pd12", "pd24", "pd36"]].values.astype(float)
     # Only horizons inside the test follow-up can be scored.
     t_max, t_min = float(np.max(yte["time"])), float(np.min(yte["time"]))
