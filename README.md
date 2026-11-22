@@ -99,6 +99,8 @@ never a predictor.
 macro, recent filings) and two language-model subagents (reader, writer). A deterministic
 critic checks every number and date in the draft against the tool outputs and blocks the memo
 if one has no source.
+`python -m distress.cli memos` writes memos on four past cases (Americanas, Ambipar, Raízen,
+Casas Bahia), each as of twelve months before the filing, to `results/memos/`.
 
 ## Systematic review
 
@@ -109,7 +111,29 @@ on Crossref and accepted only when author, year and title matched.
 
 ## Results
 
-To be filled from `results/` after the out-of-time test.
+Out-of-time test from 2020, 13,245 firm-quarters, 128 followed by a filing within 12 months
+(`results/test_h1.csv`, `test_delong.csv`, `test_h3.csv`):
+
+| Model | AUC, 12-month PD | 95% interval |
+|:---|---:|---:|
+| XGBoost survival | 0.848 | 0.799 to 0.893 |
+| XGBoost PD | 0.847 | 0.797 to 0.895 |
+| Random survival forest | 0.846 | 0.794 to 0.894 |
+| Cox | 0.804 | 0.740 to 0.861 |
+| DeepSurv | 0.798 | 0.728 to 0.862 |
+| Altman score | 0.777 | 0.712 to 0.834 |
+| DeepHit | 0.763 | 0.689 to 0.838 |
+| Hazard logit | 0.758 | 0.674 to 0.834 |
+
+- H1: the three tree ensembles beat the Altman score and the hazard logit after Holm's
+  correction; Cox beats the logit only; the neural networks beat neither. The order holds
+  with the narrow event definition and in four of five years of an annual refit.
+- H3: no model is calibrated at every horizon; at 36 months all but DeepHit underestimate the
+  observed rate (5.7%). The curves need recalibration before they feed a provision.
+- H2, pre-registered: no gain from the signals (AUC 0.756 with, 0.758 without, p = 0.58).
+  Winsorising at the 99th percentile had turned the five rarest signal counts into zeros; an
+  exploratory rerun that keeps them gives 0.783 (p = 0.01). It was decided after the test was
+  opened and needs a new test period to count (`results/test_h2_exploratory.json`).
 
 ## License
 
