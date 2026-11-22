@@ -1,6 +1,6 @@
 """Numeric guardrail: every number and date in a memo must come from the tools.
 
-Numbers are read in Brazilian (1.234,5) or international (1,234.5 / 0.78) notation.
+Numbers are read in Brazilian (1.234,5) or international (1,234.5 / 0.78) notation, with their sign.
 A probability or ratio of 0.183 may appear as 0,183, 18,3% or 18.3%; a rounded form
 is accepted when it matches the source at the number of decimals written.
 """
@@ -9,11 +9,14 @@ from __future__ import annotations
 import re
 
 DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
-NUM = re.compile(r"(?<![\w/])(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)(\s?%)?(?![\w/])")
+NUM = re.compile(r"(?<![\w/])(-?(?:\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?))(\s?%)?(?![\w/])")
 DEFAULT_ALLOWED = {1.0, 3.0, 4.0, 12.0, 24.0, 36.0, 80.0, 95.0}
 
 
 def _value(tok: str) -> tuple[float, int]:
+    if tok.startswith("-"):
+        v, dec = _value(tok[1:])
+        return -v, dec
     if "," in tok and "." in tok:                      # 1.234,56
         whole, dec = tok.replace(".", "").split(",")
         return float(f"{whole}.{dec}"), len(dec)
@@ -50,9 +53,14 @@ def check(text: str, allowed: set[float], allowed_dates: set[str]) -> list[str]:
         tok = m.group(1)
         v, dec = _value(tok)
         if dec == 0 and 1990 <= v <= 2035 and not m.group(2):
-            if tok not in years:
+            if tok not in years and v not in allowed:
                 bad.append(tok)
             continue
         if not any(abs(round(a, dec) - v) < 1e-9 for a in allowed):
             bad.append(tok)
     return bad
+
+
+def numbers_in(text: str) -> set[float]:
+    """Every number written in a tool's text output (a filing subject, say), so the memo may quote it."""
+    return {_value(m.group(1))[0] for m in NUM.finditer(DATE.sub(" ", text))}

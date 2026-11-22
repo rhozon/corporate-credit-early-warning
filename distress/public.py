@@ -20,9 +20,13 @@ IDS = {"name", "nome", "empresa", "company", "denom_social", "firm", "cd_cvm", "
 RISK_COLS = re.compile(r"^(pd|prob|score|risk|alert|rank|sig_)|(^|_)pd(_|\d|$)|^z2$|altman", re.I)
 DISTRESS_LABELS = set(CATEGORIES)
 
-# Registered trade names that are also ordinary words. A one-word name in this list is not taken as a
-# company mention; every entry is a dictionary word, added when it produced a false alarm.
-COMMON_WORDS = {"BANK", "BASE", "BRAZILIAN", "CREDIT", "FRAME", "IMPORT", "PENALTY"}
+# Registered trade names that are also ordinary words or place names. A one-word name in this list is not
+# taken as a company mention; every entry was added when it produced a false alarm (title-case filing
+# subjects such as "Desmobilização de Ativos" or "Ano-Safra 2024'25"). Longer names stay guarded.
+COMMON_WORDS = {"ATIVOS", "BAHIA", "BANK", "BASE", "BRAZILIAN", "CAIXA", "CASA", "CASAS", "CENTRO", "CREDIT",
+                "EMPREENDIMENTOS", "ENERGIA", "FINANCEIRA", "FRAME", "GLOBAL", "HOLDING", "IMPORT", "INVESTIMENTOS",
+                "JORNAL", "METAL", "MINAS", "NACIONAL", "NORDESTE", "NOVA", "NOVO", "OESTE", "PENALTY", "PLANO",
+                "PRODUTOS", "SAFRA", "SEGUROS", "SOCIEDADE", "STANDARD", "TERRA", "VISION"}
 
 
 def event_firms(data_dir: Path) -> set[int]:
@@ -54,8 +58,41 @@ def _pattern(name: str) -> re.Pattern:
     return re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, forms)) + r")(?!\w)")
 
 
-def leaks(text: str, names: list[str], window: int = 200) -> list[tuple[str, str]]:
-    """(name, snippet) for each solvent name with a risk word or a percentage within ``window`` characters."""
+def past_case_names(cad: pd.DataFrame, event_firms: set[int]) -> list[str]:
+    """Name variants of the firms with an event, longest first: they may be named, and the words they share
+    with solvent firms (BAHIA in GRUPO CASAS BAHIA) are not mentions of those firms."""
+    out = set()
+    trade = cad["trade_name"] if "trade_name" in cad else pd.Series([None] * len(cad), index=cad.index)
+    for cd, name, tn in zip(cad["cd_cvm"], cad["name"], trade):
+        if int(cd) in event_firms:
+            for n in [name, tn]:
+                if isinstance(n, str) and n.strip():
+                    out.update(v.strip() for v in name_variants(n) if len(v.strip()) >= 4)
+    return sorted(out, key=len, reverse=True)
+
+
+def _blank(text: str, keep) -> str:
+    for k in keep or ():
+        text = re.sub(r"(?<!\w)" + re.escape(k) + r"(?!\w)", lambda m: " " * len(m.group(0)), text, flags=re.I)
+    return text
+
+
+def mask(text: str, names: list[str], keep=None, by: str = "[outra companhia]") -> str:
+    """``text`` with every solvent name replaced by ``by``; the past cases named in ``keep`` stay."""
+    blank = _blank(text, keep)
+    spans = sorted({m.span() for n in names if n.lower() in blank.lower() for m in _pattern(n).finditer(blank)})
+    out, last = [], 0
+    for a, b in spans:
+        if a >= last:
+            out += [text[last:a], by]
+            last = b
+    return "".join(out) + text[last:]
+
+
+def leaks(text: str, names: list[str], window: int = 200, keep=None) -> list[tuple[str, str]]:
+    """(name, snippet) for each solvent name with a risk word or a percentage within ``window`` characters.
+    Past-case names in ``keep`` are blanked first."""
+    text = _blank(text, keep)
     low, found = text.lower(), {}
     for n in names:
         if n.lower() not in low:

@@ -56,15 +56,35 @@ def test_registry_codes_count_as_names_because_the_registry_is_public():
     assert not public.table_leaks(pd.DataFrame({"cd_cvm": [1], "lev": [0.5], "curr": [1.2]}))
 
 
+def test_a_past_case_name_does_not_trip_the_guard_on_words_it_shares_with_solvent_firms():
+    names = ["BAHIA", "CASAS", "Bahia Sul"]
+    text = "GRUPO CASAS BAHIA S.A.: PD de 12 meses de 4,3%."
+    assert public.leaks(text, names)  # the shared words alone look like solvent firms
+    assert public.leaks(text, names, keep=["GRUPO CASAS BAHIA S.A.", "GRUPO CASAS BAHIA"]) == []
+
+
+def test_mask_replaces_solvent_names_and_keeps_the_past_case():
+    text = "Parceria entre Via e Bradesco renovada. GRUPO CASAS BAHIA S.A. tem PD de 12 meses de 4,3%."
+    out = public.mask(text, ["Bradesco", "BAHIA"], keep=["GRUPO CASAS BAHIA S.A."])
+    assert out == "Parceria entre Via e [outra companhia] renovada. GRUPO CASAS BAHIA S.A. tem PD de 12 meses de 4,3%."
+
+
+def test_past_case_names_cover_only_firms_with_an_event():
+    cad = pd.DataFrame({"cd_cvm": [1, 2], "name": ["GRUPO CASAS BAHIA S.A.", "VALE S.A."], "trade_name": [None, "VALE"]})
+    keep = public.past_case_names(cad, event_firms={1})
+    assert "GRUPO CASAS BAHIA" in keep and not any("VALE" in k.upper() for k in keep)
+
+
 def _public_files():
     pats = ["README.md", "PREREGISTRATION.md", "paper/*.qmd", "paper/*.md", "results/**/*.md", "results/**/*.json", "results/**/*.csv"]
     return [p for pat in pats for p in ROOT.glob(pat) if p.is_file()]
 
 
 def test_nothing_published_names_a_solvent_firm_next_to_a_risk_figure():
-    names = public.solvent_names(pd.read_csv(ROOT / "data" / "company_names.csv"), public.event_firms(ROOT / "data"))
+    cad, firms = pd.read_csv(ROOT / "data" / "company_names.csv"), public.event_firms(ROOT / "data")
+    names, keep = public.solvent_names(cad, firms), public.past_case_names(cad, firms)
     found = {str(p.relative_to(ROOT)): hits for p in _public_files()
-             if (hits := public.leaks(p.read_text(encoding="utf-8", errors="replace"), names))}
+             if (hits := public.leaks(p.read_text(encoding="utf-8", errors="replace"), names, keep=keep))}
     assert found == {}
 
 

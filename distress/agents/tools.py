@@ -15,6 +15,14 @@ RATIO_FIELDS = {"lev": "alavancagem (passivo/ativo)", "curr": "liquidez corrente
                 "loss_q4": "trimestres com prejuízo em 12 meses (de 4)", "gc_flag": "ressalva de continuidade"}
 MACRO_FIELDS = {"selic": "Selic (% a.a.)", "ipca12": "IPCA 12 meses (%)", "ibc_yoy": "IBC-Br, variação anual (%)",
                 "pj_default": "inadimplência PJ (%)", "spread": "spread médio (p.p.)"}
+# Every predictor in words, for naming the drivers of a PD.
+FEATURE_LABELS = {**RATIO_FIELDS, **MACRO_FIELDS, "wc_ta": "capital de giro/ativo", "re_ta": "lucros retidos/ativo",
+                  "ebit_ta": "EBIT/ativo", "eq_tl": "patrimônio/passivo", "sales_g": "crescimento da receita",
+                  "log_size_real": "tamanho (receita real, em log)", "neg_eq": "patrimônio líquido negativo",
+                  "filing_delay_days": "atraso na entrega das demonstrações",
+                  "n_restatements_4q": "reapresentações de demonstrações em 4 trimestres",
+                  "info_age_days": "idade da última demonstração", "prior_event": "recuperação anterior",
+                  "unemp": "desemprego"}
 
 
 def _fmt_date(t) -> str:
@@ -38,19 +46,21 @@ class Tools:
     def panel_row(self, cd, as_of) -> dict:
         r = self._row(cd, as_of).iloc[0]
         out = {"data_base": _fmt_date(r["q"])}
-        out.update({k: round(float(r[k]), 2) for k in RATIO_FIELDS if k in r and pd.notna(r[k])})
+        out.update({v: round(float(r[k]), 2) for k, v in RATIO_FIELDS.items() if k in r and pd.notna(r[k])})
         return out
 
     def pd_curve(self, cd, as_of) -> dict:
         p = self.pd_fn(self._row(cd, as_of)).iloc[0]
         return {k: round(float(p[k]), 3) for k in ("pd12", "pd24", "pd36")}
 
-    def top_drivers(self, cd, as_of) -> list:
-        return [(f, round(float(v), 2)) for f, v in self.drivers_fn(self._row(cd, as_of))]
+    def top_drivers(self, cd, as_of) -> list[str]:
+        """The predictors that raise the PD most, in order, by name. Their weights stay out: a weight is not a
+        value of the indicator, and a writer that sees both numbers may swap them."""
+        return [FEATURE_LABELS.get(f, f) for f, _ in self.drivers_fn(self._row(cd, as_of))]
 
     def macro_context(self, cd, as_of) -> dict:
         r = self._row(cd, as_of).iloc[0]
-        return {k: round(float(r[k]), 2) for k in MACRO_FIELDS if k in r and pd.notna(r[k])}
+        return {v: round(float(r[k]), 2) for k, v in MACRO_FIELDS.items() if k in r and pd.notna(r[k])}
 
     def recent_disclosures(self, cd, as_of, n: int = 10) -> list[dict]:
         d = self.docs[(self.docs["cd_cvm"] == cd) & (self.docs["delivered"] < as_of)]

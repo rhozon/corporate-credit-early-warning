@@ -473,6 +473,63 @@ def cmd_test(a):
     print("narrow:", res_n[["model", "events", "auc"]].round(3).to_dict("records"))
 
 
+# Past cases named in the paper and on the case page (all filed after the training years).
+PAST_CASES = {20990: "americanas", 24961: "ambipar", 25917: "raizen", 6505: "casas-bahia"}
+EVENT_WORDS = {"RJ": "pedido de recuperação judicial", "RE": "recuperação extrajudicial", "FAL": "falência"}
+
+
+def cmd_memos(a):
+    """Credit memos on the past cases, each as of twelve months before the filing (results/memos/)."""
+    import json
+    import re
+
+    from . import experiment, panel as panel_mod
+    from .agents import cases
+    from .agents.orchestrator import credit_memo
+    from .agents.tools import Tools
+    from .models import MODELS
+
+    p = pd.read_parquet(DATA / "panel.parquet")
+    p["z2"] = cases.altman_z2(p)
+    train, _ = panel_mod.split(p, data_end=pd.Timestamp(a.data_end))
+    model = MODELS["logit_hazard"](features=experiment.BASE).fit(train, horizon_end=pd.Timestamp("2019-12-31"))
+
+    cad = cvm.read_cad().drop_duplicates("cd_cvm")
+    ipe = cvm.read_ipe(range(2010, 2027))
+    fr = ipe[ipe["category"].str.startswith("Fato Relevante")]
+    fr = events.non_financial(fr, cad).dropna(subset=["delivered"]).sort_values(["cd_cvm", "delivered"])
+    fr = fr[fr["subject"].str.strip() != ""].reset_index(drop=True)
+    sig = pd.read_parquet(PRIVATE / "signals_primary.parquet")
+    if len(sig) != len(fr) or (sig["cd_cvm"].values != fr["cd_cvm"].values).any():
+        raise SystemExit("material facts no longer line up with signals_primary.parquet")
+    docs = fr[["cd_cvm", "delivered", "subject"]].assign(own_recovery=sig["own_recovery"].values)
+
+    ev = load_events()
+    names = cad.set_index("cd_cvm")["name"]
+    model_llm = llm(PRIMARY, max_tokens=1500)
+    # Other listed companies named in a memo (a bank in a financing deal, say) are masked when it is published.
+    from . import public
+    listed, firms = pd.read_csv(DATA / "company_names.csv"), public.event_firms(DATA)
+    solvent, keep = public.solvent_names(listed, firms), public.past_case_names(listed, firms)
+    out_dir = ROOT / "results" / "memos"
+    summary = []
+    for cd, slug in PAST_CASES.items():
+        first = ev[(ev["cd_cvm"] == cd) & (ev["event_date"] >= "2020-01-01")].sort_values("event_date").iloc[0]
+        as_of = cases.analysis_date(first["event_date"])
+        # The registry name carries the later status ("em recuperação judicial"); the memo must not see it.
+        name = re.sub(r"\s*-?\s*EM RECUPERA\S* (JUDICIAL|EXTRAJUDICIAL)\s*$", "", str(names[cd]), flags=re.I)
+        tools = Tools(panel=p, docs=docs, pd_fn=model.pd, drivers_fn=lambda r: cases.logit_drivers(model, r),
+                      name=name)
+        memo = credit_memo(cd, as_of, model_llm, tools)
+        event = f"{EVENT_WORDS[first['event_type']]} em {first['event_date']:%d/%m/%Y}"
+        cases.write_memo(out_dir / f"{slug}.md", memo, event, clean=lambda t: public.mask(t, solvent, keep=keep))
+        summary.append({"company": name, "analysis_date": f"{as_of:%Y-%m-%d}", "event": first["event_type"],
+                        "event_date": f"{first['event_date']:%Y-%m-%d}", **memo.facts["probabilidade_de_default"],
+                        "blocked": memo.blocked, "unsupported": memo.unsupported})
+        print(slug, "blocked" if memo.blocked else "passed", memo.facts["probabilidade_de_default"], memo.unsupported)
+    (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def main(argv=None):
     PRIVATE.mkdir(parents=True, exist_ok=True)
     p = argparse.ArgumentParser(prog="distress")
@@ -529,6 +586,9 @@ def main(argv=None):
     va.add_argument("--data-end", default="2026-11-20")
     va.add_argument("--fast", action="store_true")
     va.set_defaults(fn=cmd_validate)
+    me = sub.add_parser("memos")
+    me.add_argument("--data-end", default="2026-11-20")
+    me.set_defaults(fn=cmd_memos)
     a = p.parse_args(argv)
     a.fn(a)
 
