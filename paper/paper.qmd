@@ -262,7 +262,7 @@ series come from the Central Bank's time-series system [@bcbsgs]: the Selic rate
 inflation, the IBC-Br activity index, unemployment, the corporate non-performing-loan ratio over
 90 days and the average lending spread, each lagged by its publication delay.
 
-## Event base
+## Event base {#sec-events}
 
 ```{python}
 #| output: asis
@@ -278,8 +278,20 @@ print(
     f"{fmt(N['event_firms'])} non-financial firms, {fmt(N['events_window'])} of them from 2011; "
     f"{fmt(N['left_truncated'])} firms already in recovery on 1 January 2011 are left out."
 )
-if not N["events_reviewed"]:
-    print(f"\n\n{fmt(None)} The event list is under review by the author against the source filings.")
+R = N["review"]
+if R:
+    print(f"\n\nEach draft event from 2008 on ({fmt(R['checked'])} events) is then checked by a second reader "
+          f"under a fixed rule. A language model (Gemma 4 31B, temperature zero) reads up to four of the "
+          f"company's filings nearest the event date and answers whether the company itself filed, and on what "
+          f"date. It is given the company's tax number, so that a filing made under a former name counts as the "
+          f"same company. An event the reader confirms, or dates within seven days, stands; one it dates "
+          f"elsewhere moves to that date, or goes if the company already has an event within seven days of the "
+          f"new date; one it attributes to another company (a parent, a subsidiary, an affiliate) goes; where it "
+          f"cannot tell, the first decision stands. Of the {fmt(R['checked'])} events, {fmt(R['stand'])} stand "
+          f"({fmt(R['unsure'])} of them because the second reader could not tell), {fmt(R['moved'])} move and "
+          f"{fmt(R['dropped'])} go. The counts above are after this check.")
+else:
+    print(f"\n\n{fmt(None)} The event list is being checked against the source filings.")
 ```
 
 ## Panel
@@ -351,14 +363,10 @@ print(
 )
 ```
 
-Reliability is measured three ways. A second model reads a random subsample of 3,000 documents and
+Reliability is measured two ways. A second model reads a random subsample of 3,000 documents and
 agreement is reported per category as Cohen's kappa [@cohen1960], next to the number of flags from
-each reader, since on a rare category a few extra flags move kappa a long way. The author labelled
-150 subjects, drawn with an equal quota for each category the first reader flags (and for subjects
-with no flag) and filled at random; both readers are scored against these labels, each label
-weighted by the inverse of its chance of being drawn [@horvitz1952], so that precision and recall
-estimate the rates over all documents rather than over a sample rich in rare categories. And 200
-documents drawn at random are read in full, to measure what the subject line misses.
+each reader, since on a rare category a few extra flags move kappa a long way. And 200 documents
+drawn at random are read in full, to measure what the subject line misses.
 
 ## Pre-registered test of H2
 
@@ -372,7 +380,9 @@ The second reader's labels came in after the registration and before the test wa
 led to one amendment, committed with them: a secondary version of the H2 test in which the treated
 arm keeps only the categories where the two readers reach a kappa of 0.60, the lower edge of what
 @landis1977 call substantial agreement. The threshold was set after the agreement was seen; the
-primary test is unchanged.
+primary test is unchanged. A second amendment, also before the test was opened, replaced the
+review of the event list by hand with the second reader's rule of @sec-events, so that the event
+base can be rebuilt by anyone from the cached answers.
 
 # Results
 
@@ -406,18 +416,8 @@ if K:
           f"least {fmt(min(v['agreement'] for v in K.values()), 1, pct=True)} in every category, because most "
           f"subjects carry no signal at all, so kappa is the informative figure. The first reader flags more "
           f"often than the second in {fmt(n_more)} of the {fmt(len(K))} categories. Kappa falls below 0.60 in "
-          f"{fmt(len(low))}, each with many more flags from the first reader: {flags}. The author's labels decide which reader is closer to a "
-          f"human reading; the secondary H2 test leaves these categories out.")
-G = N["gold"]
-if G:
-    an = G["metrics"]["any"]
-    print(f" Against the author's labels on {fmt(G['labelled'])} subjects, the first reader reaches precision "
-          f"{fmt(an['primary']['precision'], 2)} and recall {fmt(an['primary']['recall'], 2)} for any feature "
-          f"category, the second {fmt(an['secondary']['precision'], 2)} and {fmt(an['secondary']['recall'], 2)} "
-          f"(@tbl-gold). Recall is the less certain figure: subjects with no flag are most of the corpus and "
-          f"are sampled thinly, so the few signals the author finds among them carry large weights.")
-else:
-    print(f" Precision and recall against the author's labels: {fmt(None)}.")
+          f"{fmt(len(low))}, each with many more flags from the first reader: {flags}. The secondary H2 test "
+          f"leaves these categories out.")
 L = N["subject_loss"]
 if L:
     a = L["loss"]["any"]
@@ -455,20 +455,6 @@ if K:
     print(table(ag, 2))
 ```
 
-```{python}
-#| output: asis
-if G:
-    na = lambda x: "n/a" if x is None else x  # noqa: E731
-    gt = pd.DataFrame([{"Category": CATEGORY_NAMES.get(c, "Any feature category"), "Author": v["human"],
-                        "P1": na(v["primary"]["precision"]), "R1": na(v["primary"]["recall"]),
-                        "P2": na(v["secondary"]["precision"]), "R2": na(v["secondary"]["recall"])}
-                       for c, v in G["metrics"].items()])
-    print(f": The two readers against the author's labels on {fmt(G['labelled'])} subjects. Author: subjects the "
-          "author flags in the sample. P1 and R1: precision and recall of the first reader; P2 and R2: of the "
-          "second. Both are weighted by the inverse of each subject's chance of being drawn. {#tbl-gold}\n")
-    print(table(gt, 2))
-```
-
 # Agentic credit memo
 
 The product layer turns the models into a credit memo for a committee. An orchestrator calls
@@ -504,8 +490,11 @@ that portfolio, and continues with monthly monitoring.
 The number of events is small, so intervals are wide and the comparison rests on the intervals,
 not on the ranking. Market data (share prices, credit spreads) were left out because no public,
 stable source covers the whole panel. The event base depends on how firms describe their own
-filings; the list was reviewed by the author, and a narrow definition (judicial recovery and
-bankruptcy only) is reported as a robustness check. Screening and extraction in the review were
+filings; the list was checked by a second language model under a fixed rule rather than by hand,
+so some events may still carry a wrong date or belong to another company of the group, and a
+narrow definition (judicial recovery and bankruptcy only) is reported as a robustness check. No
+human labels were collected for the signals: the two models agree on most categories, but how
+close either comes to a human reading is not measured. Screening and extraction in the review were
 done by language models; their agreement is reported, but no human screened the full set, and
 studies without an open-access text enter only through their abstracts. The signals are read from
 subject lines; the full-text sample measures what that costs.

@@ -28,6 +28,8 @@ pip install -e ".[models,dev]"
 pytest -v
 
 python -m distress.cli events --sheet review/events.xlsx     # event base from CVM filings
+python -m distress.cli suggest-review                       # second reader of each draft event
+python -m distress.cli second-review                        # reviewed event base (fixed rule)
 python -m distress.cli panel                                 # point-in-time firm-quarter panel
 python -m distress.cli signals --workers 4                   # material-fact signals (two readers)
 python -m distress.cli fulltext-sample --n 200               # what the subject line misses
@@ -60,8 +62,10 @@ temperature 0) separates the company's own filing from ongoing proceedings, exit
 companies' cases. Episode rules are in `distress/events.py`: an episode opens at the
 company's own filing and closes at its exit; a gap of more than a year or an escalation
 (out-of-court to judicial, or to bankruptcy) opens a new one; liquidations are excluded; firms
-already in recovery in January 2011 are left out. The draft list is reviewed by hand against
-the source filings before the test is opened.
+already in recovery in January 2011 are left out. Before the test is opened, a second reader
+(Gemma 4 31B) reads the company's filings nearest each draft event since 2008 and says whether
+the company itself filed, and when; a fixed rule (`distress/review_aid.py`) then keeps, moves or
+drops the event (`data/events_second_reader.csv`, `data/events_reviewed.csv`).
 
 ## Models
 
@@ -85,8 +89,8 @@ Material-fact subjects are classified into eleven distress categories (debt rest
 covenant, missed payment, asset sale for liquidity, emergency capital, going concern, CEO or
 CFO change, rating downgrade, own recovery, subsidiary recovery, sanction) by Gemma 4 26B, with
 the company's names and tax number masked. A second model (Gemma 4 31B) reads a 3,000-document
-subsample for agreement, 150 documents were labelled by hand, and 200 documents are read in
-full to measure what the subject line misses. The company's own recovery announcements are
+subsample for agreement, and 200 documents are read in full to measure what the subject line
+misses. The company's own recovery announcements are
 never a predictor.
 
 ## Agentic credit memo

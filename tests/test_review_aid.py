@@ -66,3 +66,38 @@ def test_prompt_gives_the_cnpj_so_a_former_name_counts_as_the_same_company():
     assert "DATA NA LISTA: 28/02/2012\nTIPO NA LISTA: RJ\n\n--- Documento A\n\n--- Documento B" in user
     assert "CNPJ" not in review_aid.suggest_user("LAEP", None, pd.Timestamp("2009-08-26"), "RJ", ["x"])
     assert "nome antigo" in review_aid.SUGGEST_SYSTEM
+
+
+@pytest.mark.parametrize("text, answer, fixed", [
+    ("S (pedido em 05/09/2012) | ajuizou", True, None),
+    ("N, data do pedido 23/11/2012 | Ajuizamento", False, "2012-11-23"),
+    ("N, quem pediu: Renova Energia S.A. | sua coligada", False, None),
+    ("incerto: ler o documento | x", None, None),
+    ("incerto: nenhum documento legível perto da data", None, None),
+])
+def test_decide_reads_the_suggested_answer(text, answer, fixed):
+    assert review_aid.decide(text) == (answer, None if fixed is None else pd.Timestamp(fixed))
+
+
+def test_second_reader_review_moves_drops_and_keeps_events():
+    draft = pd.DataFrame({
+        "cd_cvm": [7, 8, 9, 9, 10, 11],
+        "event_date": pd.to_datetime(["2012-09-03", "2014-02-03", "2013-04-15", "2021-08-23", "2019-12-17",
+                                      "2005-03-01"]),
+        "event_type": ["RJ", "RJ", "RJ", "RJ", "RJ", "RJ"],
+    })
+    sug = pd.DataFrame({
+        "cd_cvm": [7, 8, 9, 9, 10],
+        "event_date": draft["event_date"][:5].dt.strftime("%Y-%m-%d"),
+        "event_type": "RJ",
+        "suggestion": ["N, data do pedido 23/11/2012 | a", "incerto: nenhum documento legível perto da data",
+                       "S (pedido em 15/04/2013) | b", "N, data do pedido 09/04/2013 | c",
+                       "N, quem pediu: Renova Energia S.A. | d"],
+    })
+    out = events.apply_review(draft, review_aid.rule_sheet(draft, sug))
+    got = {(r.cd_cvm, r.event_date.strftime("%Y-%m-%d"), r.review) for r in out.itertuples()}
+    assert got == {(7, "2012-11-23", "date_corrected"),  # date moved to the petition
+                   (8, "2014-02-03", "confirmed"),        # second reader unsure: the draft stands
+                   (9, "2013-04-15", "confirmed"),        # the 2021 row pointed back to this petition
+                   (11, "2005-03-01", "not_in_sheet")}    # firm 10 dropped: another company filed
+    assert out.loc[out.cd_cvm == 8, "review_note"].item().startswith("segundo leitor incerto")

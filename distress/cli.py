@@ -52,7 +52,7 @@ ITR_YEARS, DFP_YEARS = range(2011, 2027), range(2010, 2027)
 
 
 def load_events() -> pd.DataFrame:
-    """Reviewed events when the author's corrections exist, the draft otherwise."""
+    """The reviewed event list when it exists, the draft otherwise."""
     path = DATA / "events_reviewed.csv"
     if not path.exists():
         path = DATA / "events_draft.csv"
@@ -345,16 +345,30 @@ def cmd_validate(a):
 
 
 def cmd_apply_review(a):
-    """The author's answers in the review sheet, applied to the draft event list."""
+    """Answers given by hand in the review sheet, applied to the draft event list."""
     draft = pd.read_csv(DATA / "events_draft.csv", parse_dates=["event_date", "episode_end"])
     reviewed = events.apply_review(draft, events.read_review(a.sheet))
     reviewed.to_csv(DATA / "events_reviewed.csv", index=False)
     print(reviewed["review"].value_counts().to_dict(), "| removed:", len(draft) - len(reviewed))
 
 
+def cmd_second_review(a):
+    """The draft event list reviewed by the second reader's answers (review_aid.rule_sheet)."""
+    from . import review_aid
+
+    draft = pd.read_csv(DATA / "events_draft.csv", parse_dates=["event_date", "episode_end"])
+    second = pd.read_csv(DATA / "events_second_reader.csv")
+    reviewed = events.apply_review(draft, review_aid.rule_sheet(draft, second))
+    reviewed.to_csv(DATA / "events_reviewed.csv", index=False)
+    print(reviewed["review"].value_counts().to_dict(), "| removed:", len(draft) - len(reviewed),
+          "| draft kept where the second reader was unsure:", int(reviewed["review_note"].str.startswith(
+              "segundo leitor incerto").sum()))
+
+
 def cmd_suggest_review(a):
-    """A suggested answer beside each event of the review sheet: a language model reads the filings near
-    the event date. The author's S/N column is left alone; a copy of the suggestions goes to data/private."""
+    """A second reader for the draft event list: a language model reads the filings near each event date
+    and answers whether this company filed, and when (data/events_second_reader.csv). With --sheet, the
+    answers also go beside each event of the review sheet; the S/N column is left alone."""
     import hashlib
     from concurrent.futures import ThreadPoolExecutor
 
@@ -387,16 +401,17 @@ def cmd_suggest_review(a):
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
         texts = list(ex.map(one, [r for _, r in ev.iterrows()]))
     out = ev[["cd_cvm", "name", "event_date", "event_type"]].assign(suggestion=texts)
-    out.to_csv(PRIVATE / "review_suggestions.csv", index=False)
-    keyed = {(int(r.cd_cvm), r.event_date.date(), r.event_type): r.suggestion for r in out.itertuples()}
-    print("written:", review_aid.write_suggestions(Path(a.sheet), keyed), "of", len(out))
+    out.to_csv(DATA / "events_second_reader.csv", index=False)
+    if a.sheet:
+        keyed = {(int(r.cd_cvm), r.event_date.date(), r.event_type): r.suggestion for r in out.itertuples()}
+        print("written:", review_aid.write_suggestions(Path(a.sheet), keyed), "of", len(out))
     print(out["suggestion"].str.extract(r"^(S|N, data|N, quem|incerto)")[0].value_counts().to_dict())
 
 
 def cmd_test(a):
     """Opens the out-of-time test: H1 (all models), H2 (pre-registered primary test and ablations), H3.
 
-    Refuses to run on the draft event list: the test is opened once, after the author's review.
+    Refuses to run on the draft event list: the test is opened once, after the event review.
     Firm-level predictions are written to data/private only; results/ gets aggregates.
     """
     import json
@@ -489,8 +504,10 @@ def main(argv=None):
     gd.add_argument("--n", type=int, default=150)
     gd.add_argument("--workers", type=int, default=2)
     gd.set_defaults(fn=cmd_gold)
+    s2 = sub.add_parser("second-review")
+    s2.set_defaults(fn=cmd_second_review)
     sr = sub.add_parser("suggest-review")
-    sr.add_argument("sheet")
+    sr.add_argument("--sheet", default=None)
     sr.add_argument("--k", type=int, default=4)
     sr.add_argument("--chars", type=int, default=5000)
     sr.add_argument("--workers", type=int, default=2)

@@ -1,11 +1,12 @@
-"""Suggestions for the author's review of the event list.
+"""A second reader for the draft event list.
 
-A language model reads the filings near each draft event and suggests an answer: whether this company
-itself filed, and on what date. The suggestion goes into its own column of the review sheet; the
-author's S/N column is never written here, so every event is still decided by hand.
+A language model reads the filings near each draft event and answers whether this company itself
+filed, and on what date. The answers can sit beside a hand review sheet (``write_suggestions``) or,
+under a fixed rule (``rule_sheet``), produce the reviewed event list on their own.
 """
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from pathlib import Path
 
@@ -83,6 +84,51 @@ def suggestion_text(event_date, s: dict) -> str:
     else:
         head = "incerto: ler o documento"
     return head + (f" | {s['evidence']}" if s["evidence"] else "")
+
+
+def decide(text: str) -> tuple[bool | None, pd.Timestamp | None]:
+    """The answer a suggestion gives: True (the event stands), False with a date (the petition was on
+    another day), False without one (another company filed), None (the reader could not tell)."""
+    t = str(text)
+    if t.startswith("S"):
+        return True, None
+    m = re.match(r"N, data do pedido (\d{2}/\d{2}/\d{4})", t)
+    if m:
+        return False, pd.to_datetime(m.group(1), dayfirst=True)
+    if t.startswith("N"):
+        return False, None
+    return None, None
+
+
+def rule_sheet(draft: pd.DataFrame, suggestions: pd.DataFrame) -> pd.DataFrame:
+    """The second reader's suggestions as answers in the review sheet's columns, for events.apply_review.
+
+    S keeps the event. N with a date moves it to that date, unless the firm already has an event
+    within the tolerance of it: then the row points back to a petition already in the list and goes.
+    N without a date drops it. Where the reader could not tell, the first reader's decision stands.
+    """
+    dates = pd.to_datetime(draft["event_date"])
+    taken = {c: list(dates[draft["cd_cvm"] == c]) for c in draft["cd_cvm"].unique()}
+    rows = []
+    for r in suggestions.itertuples():
+        when = pd.Timestamp(r.event_date)
+        ok, fixed = decide(r.suggestion)
+        note = ""
+        if ok is None:
+            ok, note = True, "segundo leitor incerto: vale a decisão do primeiro leitor"
+        elif fixed is not None and abs(fixed - when) <= TOLERANCE:
+            ok, fixed = True, None
+        elif fixed is not None:
+            same = [t for t in taken.get(r.cd_cvm, []) if t != when and abs(t - fixed) <= TOLERANCE]
+            if same:
+                fixed, note = None, f"mesmo pedido do evento de {same[0]:%d/%m/%Y}"
+            else:
+                taken.setdefault(r.cd_cvm, []).append(fixed)
+        rows.append({"código CVM": r.cd_cvm, "data": when, "tipo": r.event_type,
+                     "confere (S/N)": "S" if ok else "N",
+                     "data correta": fixed.strftime("%d/%m/%Y") if fixed is not None else "",
+                     "observação": note})
+    return pd.DataFrame(rows)
 
 
 def _day(v):

@@ -52,3 +52,18 @@ subsidiary recovery (0.50) and sanction (0.51). One analysis is added; nothing a
 - The threshold was chosen after the agreement values were seen and before any test row was
   used. Emergency capital (0.601) sits on it.
 - The primary test stays as registered; this one is reported beside it, as secondary.
+
+## Amendment, 2026-11-22 (before the test period was opened)
+
+The event base was to be the author's review of the draft list. It is instead the check by a
+second reader under a fixed rule, which anyone can rerun from the cached answers. Nothing else
+changes.
+
+- Reader: Gemma 4 31B, temperature 0, reads up to four of the company's filings nearest each
+  draft event from 2008 on, with the company's tax number, and answers whether this company
+  filed and on what date (`data/events_second_reader.csv`).
+- Rule (`review_aid.rule_sheet`): an event the reader confirms, or dates within seven days,
+  stands; one it dates elsewhere moves to that date, or goes if the company already has an event
+  within seven days of it; one it attributes to another company goes; where the reader cannot
+  tell, the first reader's decision stands.
+- `python -m distress.cli second-review` writes `data/events_reviewed.csv`.

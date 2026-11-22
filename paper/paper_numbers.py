@@ -33,6 +33,17 @@ def load() -> dict:
     n["events_window"] = int((ev["event_date"] >= "2011-01-01").sum())
     n["left_truncated"] = int(ev["left_truncated"].sum()) if "left_truncated" in ev else None
     n["events_reviewed"] = (ROOT / "data" / "events_reviewed.csv").exists()
+    second = ROOT / "data" / "events_second_reader.csv"
+    if n["events_reviewed"] and second.exists():
+        draft = pd.read_csv(ROOT / "data" / "events_draft.csv")
+        checked = ev[ev["review"] != "not_in_sheet"]
+        n["review"] = {"checked": len(pd.read_csv(second)),
+                       "stand": int((checked["review"] == "confirmed").sum()),
+                       "unsure": int(checked["review_note"].fillna("").str.startswith("segundo leitor incerto").sum()),
+                       "moved": int((checked["review"] == "date_corrected").sum()),
+                       "dropped": len(draft) - len(ev)}
+    else:
+        n["review"] = None
 
     p = pd.read_parquet(ROOT / "data" / "panel.parquet", columns=["q", "cd_cvm", "event"])
     n["panel_rows"], n["panel_firms"] = len(p), p["cd_cvm"].nunique()
@@ -46,7 +57,6 @@ def load() -> dict:
     n["core"] = _json("slr/core_retrieval.json")
     n["signals_kappa"] = _json("results/llm_agreement.json")
     n["subject_loss"] = _json("results/subject_vs_fulltext.json")
-    n["gold"] = _json("results/gold_metrics.json")
     n["llm_models"] = _json("results/llm_models.json")
     # Document-level labels are private (they read as alerts on named firms); the counts are public.
     counts = _json("results/signal_counts.json") or {}
