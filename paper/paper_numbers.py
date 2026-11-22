@@ -31,6 +31,7 @@ def load() -> dict:
     n["events_all"] = len(ev)
     n["event_firms"] = ev["cd_cvm"].nunique()
     n["events_window"] = int((ev["event_date"] >= "2011-01-01").sum())
+    n["window_firms"] = int(ev.loc[ev["event_date"] >= "2011-01-01", "cd_cvm"].nunique())
     n["left_truncated"] = int(ev["left_truncated"].sum()) if "left_truncated" in ev else None
     n["events_reviewed"] = (ROOT / "data" / "events_reviewed.csv").exists()
     second = ROOT / "data" / "events_second_reader.csv"
@@ -71,8 +72,16 @@ def load() -> dict:
         n[name] = pd.read_csv(f) if f.exists() else None
     n["test_h2"] = _json("results/test_h2.json")
     n["test_h2_reliable"] = _json("results/test_h2_reliable.json")
+    n["test_h2_exploratory"] = _json("results/test_h2_exploratory.json")
+    for name in ("test_h2_ablation", "test_robust_narrow", "test_robust_rolling"):
+        f = ROOT / "results" / f"{name}.csv"
+        n[name] = pd.read_csv(f) if f.exists() else None
     return n
 
+
+MODEL_NAMES = {"altman": "Altman score", "logit_hazard": "Hazard logit", "cox": "Cox", "xgb_pd12": "XGBoost PD",
+               "xgb_cox": "XGBoost survival", "rsf": "Random survival forest", "deepsurv": "DeepSurv",
+               "deephit": "DeepHit"}
 
 CATEGORY_NAMES = {"debt_restructuring": "Debt restructuring", "covenant": "Covenant waiver or breach",
                   "missed_payment": "Missed payment", "asset_sale_liquidity": "Asset sale for liquidity",
@@ -80,6 +89,14 @@ CATEGORY_NAMES = {"debt_restructuring": "Debt restructuring", "covenant": "Coven
                   "ceo_cfo_change": "Executive change", "rating_downgrade": "Rating downgrade",
                   "own_recovery": "Own recovery", "subsidiary_recovery": "Subsidiary recovery",
                   "sanction": "Sanction"}
+
+
+WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
+
+
+def spell(n) -> str:
+    """Counts up to ten in words, as prose wants them; larger counts in figures."""
+    return WORDS[int(n)] if 0 <= int(n) <= 10 else fmt(int(n))
 
 
 def fmt(x, digits: int = 0, pct: bool = False) -> str:

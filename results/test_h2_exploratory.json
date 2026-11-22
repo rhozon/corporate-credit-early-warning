@@ -1,0 +1,74 @@
+{
+  "status": "exploratory, after the test was opened",
+  "flat_after_winsorising": [
+    "sig_covenant_12m",
+    "sig_missed_payment_12m",
+    "sig_going_concern_12m",
+    "sig_rating_downgrade_12m",
+    "sig_subsidiary_recovery_12m"
+  ],
+  "all": {
+    "model": "logit_hazard",
+    "n": 13245,
+    "events": 128,
+    "auc_base": 0.7582306119920713,
+    "auc_signals": 0.7833599169970268,
+    "auc_diff": 0.02512930500495525,
+    "z": 2.3270156687246453,
+    "p_one_sided": 0.009982215660211846,
+    "signals": [
+      "sig_debt_restructuring_12m",
+      "sig_covenant_12m",
+      "sig_missed_payment_12m",
+      "sig_asset_sale_liquidity_12m",
+      "sig_emergency_capital_12m",
+      "sig_going_concern_12m",
+      "sig_ceo_cfo_change_12m",
+      "sig_rating_downgrade_12m",
+      "sig_subsidiary_recovery_12m",
+      "sig_sanction_12m",
+      "sig_any_12m"
+    ],
+    "keep_tails": [
+      "sig_debt_restructuring_12m",
+      "sig_covenant_12m",
+      "sig_missed_payment_12m",
+      "sig_asset_sale_liquidity_12m",
+      "sig_emergency_capital_12m",
+      "sig_going_concern_12m",
+      "sig_ceo_cfo_change_12m",
+      "sig_rating_downgrade_12m",
+      "sig_subsidiary_recovery_12m",
+      "sig_sanction_12m",
+      "sig_any_12m"
+    ]
+  },
+  "reliable": {
+    "model": "logit_hazard",
+    "n": 13245,
+    "events": 128,
+    "auc_base": 0.7582306119920713,
+    "auc_signals": 0.7765641081230464,
+    "auc_diff": 0.018333496130975124,
+    "z": 1.733280072424397,
+    "p_one_sided": 0.04152295045911125,
+    "signals": [
+      "sig_debt_restructuring_12m",
+      "sig_covenant_12m",
+      "sig_missed_payment_12m",
+      "sig_asset_sale_liquidity_12m",
+      "sig_emergency_capital_12m",
+      "sig_ceo_cfo_change_12m",
+      "sig_rating_downgrade_12m"
+    ],
+    "keep_tails": [
+      "sig_debt_restructuring_12m",
+      "sig_covenant_12m",
+      "sig_missed_payment_12m",
+      "sig_asset_sale_liquidity_12m",
+      "sig_emergency_capital_12m",
+      "sig_ceo_cfo_change_12m",
+      "sig_rating_downgrade_12m"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "model": "logit_hazard",
+  "n": 13245,
+  "events": 128,
+  "auc_base": 0.7582306119920713,
+  "auc_signals": 0.7490190449416787,
+  "auc_diff": -0.009211567050392722,
+  "z": -1.163719615774552,
+  "p_one_sided": 0.8777311713205136,
+  "signals": [
+    "sig_debt_restructuring_12m",
+    "sig_covenant_12m",
+    "sig_missed_payment_12m",
+    "sig_asset_sale_liquidity_12m",
+    "sig_emergency_capital_12m",
+    "sig_ceo_cfo_change_12m",
+    "sig_rating_downgrade_12m"
+  ],
+  "keep_tails": []
+}

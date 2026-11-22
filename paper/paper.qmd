@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd()))
 sys.path.insert(0, str(Path.cwd().parent))
-from paper_numbers import CATEGORY_NAMES, N, event_date, fmt, table
+from paper_numbers import CATEGORY_NAMES, MODEL_NAMES, N, event_date, fmt, spell, table
 ```
 
 # Abstract {.unnumbered}
@@ -25,10 +25,20 @@ print(
     f"out-of-court recovery of Brazilian listed non-financial companies better than the classical "
     f"accounting scores, and whether distress signals read by language models from material-fact "
     f"filings add information. The event base is built from public CVM records with point-in-time "
-    f"dating ({fmt(N['events_window'])} events in {fmt(N['event_firms'])} firms since 2011), the "
+    f"dating ({fmt(N['events_window'])} events in {fmt(N['window_firms'])} firms since 2011), the "
     f"firm-quarter panel holds {fmt(N['panel_rows'])} observations of {fmt(N['panel_firms'])} firms, "
     f"and eight models are compared on a single out-of-time test from 2020 onwards, with firm-clustered "
-    f"bootstrap intervals. A systematic review under PRISMA 2020 ({fmt(N['prisma']['screened'])} "
+    f"bootstrap intervals."
+    + (f" Gradient-boosted and random-forest survival models reach an out-of-time AUC of about "
+       f"{fmt(N['test_h1'].set_index('model').loc[['xgb_pd12', 'xgb_cox', 'rsf'], 'auc'].mean(), 2)} for the "
+       f"12-month PD, against {fmt(N['test_h1'].set_index('model').at['altman', 'auc'], 2)} for the Altman score and "
+       f"{fmt(N['test_h1'].set_index('model').at['logit_hazard', 'auc'], 2)} for the hazard logit; the neural "
+       f"networks do not beat the benchmarks, and no model is calibrated at every horizon. The pre-registered test "
+       f"finds no gain from the language-model signals (AUC {fmt(N['test_h2']['auc_signals'], 3)} against "
+       f"{fmt(N['test_h2']['auc_base'], 3)}); an exploratory rerun that keeps the rarest signal counts, which the "
+       f"registered preprocessing had erased, gives {fmt(N['test_h2_exploratory']['all']['auc_signals'], 3)}."
+       if N["test_h1"] is not None and N["test_h2"] and N["test_h2_exploratory"] else "")
+    + f" A systematic review under PRISMA 2020 ({fmt(N['prisma']['screened'])} "
     f"records screened, {fmt(N['prisma']['included'])} included) shows that survival models are a "
     f"minority of the literature, that out-of-time validation is rarely stated, and that no study "
     f"included combines survival models with language-model signals on Brazilian firms. The paper "
@@ -44,7 +54,14 @@ brasileiras não financeiras melhor do que os escores contábeis clássicos, e s
 lidos por modelos de linguagem nos fatos relevantes acrescentam informação. A base de eventos vem
 de registros públicos da CVM, datados pelo que era conhecido em cada data; oito modelos são
 comparados num único teste fora do tempo, a partir de 2020, com intervalos por bootstrap agrupado
-por empresa. Uma revisão sistemática (PRISMA 2020) mostra as lacunas que o estudo ocupa. Por fim,
+por empresa. Fora do tempo, os modelos de árvores chegam a uma AUC de cerca de
+`{python} fmt(N['test_h1'].set_index('model').loc[['xgb_pd12', 'xgb_cox', 'rsf'], 'auc'].mean(), 2).replace('.', ',')`
+na PD de 12 meses, contra
+`{python} fmt(N['test_h1'].set_index('model').at['altman', 'auc'], 2).replace('.', ',')` do escore
+de Altman; nenhum modelo é bem calibrado em todos os prazos. O teste pré-registrado não encontra
+ganho nos sinais lidos pelos modelos de linguagem; uma rodada exploratória que mantém os sinais
+mais raros sugere um ganho que precisa de um novo período de teste para ser confirmado. Uma
+revisão sistemática (PRISMA 2020) mostra as lacunas que o estudo ocupa. Por fim,
 um parecer de crédito gerado por agentes, com trava numérica, e um desenho de serviço de
 monitoramento alinhado à Resolução CMN 4.966/2021.
 
@@ -390,14 +407,92 @@ base can be rebuilt by anyone from the cached answers.
 
 ```{python}
 #| output: asis
-print(": Out-of-time test, 12-month PD and term structure. {#tbl-h1}\n")
-print(table(N["test_h1"]))
+H1, DL, H3 = N["test_h1"], N["test_delong"], N["test_h3"]
+nm = lambda m: MODEL_NAMES.get(m, m)  # noqa: E731
+words = lambda ms: ", ".join(nm(m) for m in ms[:-1]) + (" and " if len(ms) > 1 else "") + nm(ms[-1])  # noqa: E731
+if H1 is not None:
+    r = H1.set_index("model")
+    trees = [m for m in ("xgb_cox", "xgb_pd12", "rsf") if m in r.index]
+    beats = DL[DL["p_holm"] < 0.05]
+    won = {m: set(beats.loc[beats["model"] == m, "versus"]) for m in r.index}
+    both = [m for m in r.index if {"altman", "logit_hazard"} <= won[m]]
+    only_logit = [m for m in r.index if m not in both and "logit_hazard" in won[m]]
+    neither = [m for m in r.index if m not in both + only_logit + ["altman", "logit_hazard"]]
+    text = (f"On the {fmt(int(r['n'].iloc[0]))} test firm-quarters whose 12-month window is observed "
+            f"({fmt(int(r['events'].iloc[0]))} of them followed by a filing within 12 months), the tree ensembles "
+            f"rank firms best: "
+            + "; ".join(f"{nm(m)} AUC {fmt(r.at[m, 'auc'], 3)} [{fmt(r.at[m, 'auc_lo'], 3)}, {fmt(r.at[m, 'auc_hi'], 3)}]"
+                        for m in trees)
+            + f"; against {fmt(r.at['altman', 'auc'], 3)} for the Altman score and "
+            f"{fmt(r.at['logit_hazard', 'auc'], 3)} for the hazard logit (@tbl-h1). {words(both)} beat both "
+            f"benchmarks after Holm's correction (@tbl-delong)")
+    if only_logit:
+        text += f"; {words(only_logit)} beat{'s' if len(only_logit) == 1 else ''} the logit only"
+    if neither:
+        text += f"; {words(neither)} beat{'s' if len(neither) == 1 else ''} neither"
+    text += (". H1 holds for the tree ensembles. The neural networks do not deliver the gain on a panel of this "
+             "size, and the intervals overlap enough that the order among the three ensembles is not established.")
+    print(text)
+if H3 is not None:
+    h = H3.set_index(["model", "horizon"])
+    obs = {k: H3.loc[H3["horizon"] == k, "observed"].iloc[0] for k in (12, 24, 36)}
+    m12 = H3[H3["horizon"] == 12].set_index("model")["mean_pd"]
+    m36 = H3[(H3["horizon"] == 36) & (H3["model"] != "deephit")].set_index("model")["mean_pd"]
+    b36 = H3[H3["horizon"] == 36].set_index("model")["brier"].idxmin()
+    close = H3[H3["horizon"] == 12].assign(gap=lambda d: (d["mean_pd"] - d["observed"]).abs()).nsmallest(2, "gap")
+    print(f"\n\nNo model is calibrated over the whole term structure (@tbl-h3). At 12 months the observed rate "
+          f"is {fmt(obs[12], 2, pct=True)} and the mean PD ranges from {fmt(m12.min(), 2, pct=True)} "
+          f"({nm(m12.idxmin())}) to {fmt(m12.max(), 2, pct=True)} ({nm(m12.idxmax())}); "
+          f"{words(list(close['model']))} come closest. At 36 months every model but DeepHit underestimates: "
+          f"the observed rate is {fmt(obs[36], 1, pct=True)} and the mean PDs run from {fmt(m36.min(), 1, pct=True)} "
+          f"to {fmt(m36.max(), 1, pct=True)}, while DeepHit overestimates by a wide margin. Calibration slopes "
+          f"are below one for every model except Cox, whose slopes above two mean its PDs are too compressed. "
+          f"{nm(b36)} has the lowest Brier score at 36 months. H3 holds only in part: the best long-horizon "
+          f"curve comes from a survival model, but survival models as a group are not better calibrated than "
+          f"the hazard logit, and every curve needs recalibration before it feeds a lifetime provision.")
 ```
 
 ```{python}
 #| output: asis
-print(": DeLong tests against the Altman score and the hazard logit, with Holm-adjusted p-values. {#tbl-delong}\n")
-print(table(N["test_delong"]))
+if H1 is not None:
+    t = pd.DataFrame({"Model": [nm(m) for m in H1["model"]], "AUC": H1["auc"],
+                      "95% CI": [f"{fmt(a, 3)} to {fmt(b, 3)}" for a, b in zip(H1["auc_lo"], H1["auc_hi"])],
+                      "PR-AUC": H1["pr_auc"], "KS": H1["ks"], "Brier": H1["brier"], "C (Uno)": H1["c_uno"],
+                      "IBS": H1["ibs"]})
+    print(": Out-of-time test from 2020: discrimination of the 12-month PD (AUC with firm-clustered bootstrap "
+          "interval, area under the precision-recall curve, KS, Brier score) and of the survival curve (Uno's C, "
+          "integrated Brier score). {#tbl-h1}\n")
+    print(table(t))
+else:
+    print(": Out-of-time test. {#tbl-h1}\n")
+    print(table(None))
+```
+
+```{python}
+#| output: asis
+if DL is not None:
+    d = pd.DataFrame({"Model": [nm(m) for m in DL["model"]], "Versus": [nm(m) for m in DL["versus"]],
+                      "AUC difference": DL["auc_diff"], "p": DL["p"], "p (Holm)": DL["p_holm"]})
+    print(": DeLong tests of the 12-month PD against the Altman score and the hazard logit (one-sided, model "
+          "better), with Holm-adjusted p-values. {#tbl-delong}\n")
+    print(table(d))
+```
+
+```{python}
+#| output: asis
+if H3 is not None:
+    rows = []
+    for m in H3["model"].unique():
+        row = {"Model": nm(m)}
+        for k in (12, 24, 36):
+            row[f"PD {k}m"] = h.at[(m, k), "mean_pd"]
+            row[f"Slope {k}m"] = h.at[(m, k), "calib_slope"]
+        row["Brier 36m"] = h.at[(m, 36), "brier"]
+        rows.append(row)
+    print(f": Calibration of the PD term structure on rows whose window is observed: mean PD and calibration "
+          f"slope at each horizon, and the Brier score at 36 months. Observed rates: {fmt(obs[12], 2, pct=True)} "
+          f"at 12 months, {fmt(obs[24], 2, pct=True)} at 24 and {fmt(obs[36], 2, pct=True)} at 36. {{#tbl-h3}}\n")
+    print(table(pd.DataFrame(rows), 3))
 ```
 
 ## Language-model signals (H2)
@@ -435,13 +530,36 @@ if L:
           f"restate that status. Since the subject line keeps most of the signal, the panel uses subjects; the "
           f"result for debt renegotiation is a limitation of H2 and the reason the monitor of Section 8 reads "
           f"whole documents.")
-H2 = N["test_h2"]
-print("\n\n" + (f"Primary test: AUC {fmt(H2['auc_base'], 3)} without signals and {fmt(H2['auc_signals'], 3)} "
-                f"with them (one-sided DeLong p = {fmt(H2['p_one_sided'], 3)})." if H2 else fmt(None)))
-H2R = N["test_h2_reliable"]
-if H2R:
-    print(f" With the reliable categories only: AUC {fmt(H2R['auc_signals'], 3)} "
-          f"(one-sided DeLong p = {fmt(H2R['p_one_sided'], 3)}).")
+H2, H2R, H2X, AB = N["test_h2"], N["test_h2_reliable"], N["test_h2_exploratory"], N["test_h2_ablation"]
+if H2:
+    txt = (f"\n\nThe pre-registered test does not support H2. On the {fmt(H2['n'])} test rows "
+           f"({fmt(H2['events'])} followed by a filing within 12 months), the hazard logit reaches an AUC of "
+           f"{fmt(H2['auc_base'], 3)} without the signals and {fmt(H2['auc_signals'], 3)} with them (one-sided "
+           f"DeLong p = {fmt(H2['p_one_sided'], 2)}).")
+    if H2R:
+        txt += (f" With the seven reliable categories only, the AUC is {fmt(H2R['auc_signals'], 3)} "
+                f"(p = {fmt(H2R['p_one_sided'], 2)}).")
+    if H2X:
+        flat = [CATEGORY_NAMES[c[4:-4]].lower() for c in H2X["flat_after_winsorising"]]
+        txt += (f" One flaw lies in the preprocessing, which was fixed with the rest of the code before the "
+                f"registration: every predictor is winsorised at the 1st and 99th percentiles of the training rows, "
+                f"and {spell(len(flat))} signal counts ({', '.join(flat[:-1])} and {flat[-1]}) are non-zero in fewer "
+                f"than 1% of those rows, so winsorising turned them into constant zeros and the registered tests ran "
+                f"without them. The tests were repeated with the signal counts left unclipped. That run was decided "
+                f"after the test period was opened and is exploratory: it gives an AUC of "
+                f"{fmt(H2X['all']['auc_signals'], 3)} with all signals (p = {fmt(H2X['all']['p_one_sided'], 2)}) "
+                f"and {fmt(H2X['reliable']['auc_signals'], 3)} with the reliable ones "
+                f"(p = {fmt(H2X['reliable']['p_one_sided'], 2)}).")
+    if AB is not None:
+        sec = AB[(AB["role"] == "secondary") & (AB["model"] != "altman")]  # Altman's score has fixed inputs
+        txt += (f" Across the other {spell(len(sec))} models that take the signals, adding them changes the AUC by between "
+                f"{fmt(sec['auc_diff'].min(), 3)} and {fmt(sec['auc_diff'].max(), 3)}, and "
+                + (lambda k: "none of the changes is" if k == 0 else f"{spell(k)} of the changes {'is' if k == 1 else 'are'}")(
+                    int((sec["p_holm"] < 0.05).sum()))
+                + " significant after Holm's correction (@tbl-ablation).")
+    print(txt)
+else:
+    print("\n\n" + fmt(None))
 ```
 
 ```{python}
@@ -453,6 +571,45 @@ if K:
     print(": Agreement of the two language models on the material-fact subjects they both read: flags "
           "from each reader, flags from both, and Cohen's kappa. {#tbl-agreement}\n")
     print(table(ag, 2))
+```
+
+```{python}
+#| output: asis
+if AB is not None:
+    ab = pd.DataFrame({"Model": [nm(m) for m in AB["model"]], "Role": AB["role"], "AUC base": AB["auc_base"],
+                       "AUC with signals": AB["auc_signals"], "Difference": AB["auc_diff"], "p": AB["p"],
+                       "p (Holm)": AB["p_holm"].map(lambda v: "" if v != v else fmt(v, 3))})
+    print(": Each model with and without the language-model signals (registered preprocessing). The hazard logit's "
+          "row is the pre-registered test; Holm's correction covers the seven secondary rows. {#tbl-ablation}\n")
+    print(table(ab))
+```
+
+## Robustness
+
+```{python}
+#| output: asis
+RN, RR = N["test_robust_narrow"], N["test_robust_rolling"]
+if RN is not None and H1 is not None:
+    rn = RN.set_index("model")
+    best = rn["auc"].idxmax()
+    print(f"With the narrow event definition (judicial recovery and bankruptcy only, "
+          f"{fmt(int(rn['events'].iloc[0]))} test rows with an event within 12 months), {nm(best)} has the highest "
+          f"AUC ({fmt(rn.at[best, 'auc'], 3)}), against {fmt(rn.at['altman', 'auc'], 3)} for the Altman score and "
+          f"{fmt(rn.at['logit_hazard', 'auc'], 3)} for the hazard logit.")
+if RR is not None:
+    g = RR.groupby("model")["auc"].agg(["mean", "min", "max"])
+    order = g["mean"].sort_values(ascending=False)
+    years = sorted(RR["year"].unique())
+    print(f" Refitting every year with a moving origin ({years[0]} to {years[-1]}), the mean AUC across years is "
+          f"highest for {nm(order.index[0])} ({fmt(order.iloc[0], 3)}) and {nm(order.index[1])} "
+          f"({fmt(order.iloc[1], 3)}); the Altman score averages {fmt(g.at['altman', 'mean'], 3)} and the hazard "
+          f"logit {fmt(g.at['logit_hazard', 'mean'], 3)}. Yearly test sets hold few events, so single years move "
+          f"a lot (@tbl-rolling).")
+    piv = RR.pivot_table(index="model", columns="year", values="auc").reindex(order.index)
+    piv.insert(0, "Model", [nm(m) for m in piv.index])
+    piv.columns = [str(c) for c in piv.columns]
+    print("\n\n: AUC of the 12-month PD by test year, with an annual refit on a moving origin. {#tbl-rolling}\n")
+    print(table(piv.reset_index(drop=True)))
 ```
 
 # Agentic credit memo
@@ -475,14 +632,14 @@ if M:
     hi = max(M, key=lambda m: m["pd12"])
     hi_name = [k for k, v in by.items() if v is hi][0]
     others = [k for k, v in by.items() if v is not hi]
-    print(f"The agent was run on {fmt(len(M))} past cases ({', '.join(by)}), each as of twelve months before "
+    print(f"The agent was run on {spell(len(M))} past cases ({', '.join(by)}), each as of twelve months before "
           f"the filing, with the hazard logit fitted on the training years and only what was public on that "
           f"date. The registry name, which now carries the company's later status, is cut back to the name "
           f"alone, and other listed companies named in a memo are masked in the published copy. All "
-          f"{fmt(sum(not m['blocked'] for m in M))} memos passed the critic. On the first run it blocked three, "
+          f"{spell(sum(not m['blocked'] for m in M))} memos passed the critic. On the first run it blocked three, "
           f"each for a value the memo had copied correctly: a negative rate read without its sign, and a "
           f"crop year quoted from a filing subject; both cases are now tested. A year before the filing, the "
-          f"12-month PD of {hi_name} was {fmt(hi['pd12'], 1, pct=True)}, about {fmt(hi['pd12'] / rate, 0)} times "
+          f"12-month PD of {hi_name} was {fmt(hi['pd12'], 1, pct=True)}, about {spell(round(hi['pd12'] / rate))} times "
           f"the average 12-month rate in the training years ({fmt(rate, 1, pct=True)}); for "
           f"{', '.join(others[:-1])} and {others[-1]} it was below that average "
           f"({', '.join(fmt(by[k]['pd12'], 1, pct=True) for k in others)}). Americanas filed days after "
@@ -521,11 +678,46 @@ human labels were collected for the signals: the two models agree on most catego
 close either comes to a human reading is not measured. Screening and extraction in the review were
 done by language models; their agreement is reported, but no human screened the full set, and
 studies without an open-access text enter only through their abstracts. The signals are read from
-subject lines; the full-text sample measures what that costs.
+subject lines; the full-text sample measures what that costs. The registered preprocessing erased
+the rarest signal counts, so the test of H2 that keeps them is exploratory and needs a later test
+period to confirm it. The memos on past cases name firms whose stories are public, and the model
+that writes them may know how those stories ended.
 
 # Conclusion
 
-`{python} fmt(None)`
+```{python}
+#| output: asis
+if H1 is not None and H2 and H2X:
+    r = H1.set_index("model")
+    ens = r.loc[["xgb_pd12", "xgb_cox", "rsf"], "auc"]
+    yrs = RR.pivot_table(index="model", columns="year", values="auc") if RR is not None else None
+    wins = int((yrs.loc["xgb_cox"] > yrs.loc["altman"]).sum()) if yrs is not None else None
+    hi = max(M, key=lambda m: m["pd12"]) if M else None
+    print(
+        f"Public filings are enough to rank Brazilian listed companies by their risk of judicial or "
+        f"out-of-court recovery a year ahead, and tree ensembles do it better than the accounting score and the "
+        f"hazard logit the literature uses as benchmarks: an out-of-time AUC between {fmt(ens.min(), 3)} and "
+        f"{fmt(ens.max(), 3)}, against {fmt(r.at['altman', 'auc'], 3)} and {fmt(r.at['logit_hazard', 'auc'], 3)}. "
+        f"The advantage holds under the narrow event definition"
+        + (f" and in {spell(wins)} of the {spell(yrs.shape[1])} years of the moving-origin refit" if wins is not None else "")
+        + ". The neural networks do not add to it on a panel of this size. The levels are another matter: every "
+        "model misses the long-horizon rate, so a lender that uses these curves for lifetime provisions under "
+        "Resolution 4,966 has to recalibrate them on its own portfolio.\n\n"
+        f"Whether language models add to accounting data is not settled. The test registered in advance says no "
+        f"(AUC {fmt(H2['auc_signals'], 3)} with the signals, {fmt(H2['auc_base'], 3)} without). The same test with "
+        f"the rarest signals kept (covenant breaches, missed payments, going-concern doubts, rating downgrades and "
+        f"subsidiaries' recoveries) gives {fmt(H2X['all']['auc_signals'], 3)}, but that analysis came after the "
+        f"test was opened and needs a new test period before it counts."
+        + (f" The memos on past cases show what a monitor can and cannot do. A year before its filing, the hazard "
+           f"logit put Casas Bahia at {fmt(hi['pd12'], 1, pct=True)}, about four times the average 12-month rate; "
+           f"it could not see Americanas, whose problem sat in accounts that no outside model could read." if hi else "")
+        + "\n\nThe monitor of the previous section follows from these results: rank the portfolio with a tree "
+        "ensemble, recalibrate the curves on the client's own defaults, read whole filings rather than subject "
+        "lines, and let a deterministic critic check every number a language model writes."
+    )
+else:
+    print(fmt(None))
+```
 
 # Data and code availability {.unnumbered}
 
