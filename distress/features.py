@@ -130,13 +130,32 @@ def _plain(s) -> str:
     return "".join(c for c in s if not unicodedata.combining(c)).lower()
 
 
+# Since the 2016 reports every audit opinion carries the auditor-responsibility paragraph ("se existe
+# incerteza relevante em relação a eventos ou condições que possam levantar dúvida significativa..."),
+# so the rule only accepts statements: the section heading, "indicam a existência de incerteza",
+# "pode levantar dúvida", "suscita dúvida substancial". The conditional "se existe" and the
+# subjunctive "possam levantar" of that paragraph never match.
+_U = r"incertezas? (?:relevantes?|significativas?|materia(?:l|is))"
+_D = r"duvidas? (?:significativas?|substanci(?:al|ais)|relevantes?)"
 _GC = re.compile(
-    r"incertezas? (relevantes?|materia(l|is)|significativas?)[^.]{0,250}continuidade operacional"
-    r"|continuidade operacional[^.]{0,250}incertezas? (relevantes?|materia(l|is)|significativas?)"
-    r"|duvidas? (significativas?|substanci(al|ais))[^.]{0,250}continuidade operacional")
+    rf"\b{_U} relacionadas? (?:com|a) (?:a )?continuidade operacional"
+    rf"|\b{_U} (?:sobre|quanto a|em relacao a) (?:a )?(?:sua )?(?:capacidade de )?continuidade operacional"
+    rf"|\b(?:indicam|indica|indicaria|indicariam|indicador|indicativo|evidenciam|evidencia|demonstram|representam"
+    rf"|configuram)\b[^.]{{0,40}}\b{_U}[^.]{{0,250}}continuidade operacional"
+    rf"|(?<!se )(?<!que )\b(?:existe|existem|ha) (?:uma )?{_U}[^.]{{0,250}}continuidade operacional"
+    rf"|\b(?:pode|podem|podera|poderao) levantar (?:uma )?duvidas?"
+    rf"(?: (?:significativas?|substanci(?:al|ais)|relevantes?))?[^.]{{0,200}}continuidade operacional"
+    rf"|\b(?:suscita|suscitam|levanta|levantam|gera|geram|indica|indicam) (?:uma )?{_D}[^.]{{0,80}}continuidade operacional")
+# Doubt about an investee is not doubt about the filer.
+_GC_INVESTEE = re.compile(r"\s*(?:da|de sua|das) (?:controlada|controladas|investida|coligada|subsidiaria)")
+
+
+def _gc_text(t) -> bool:
+    s = re.sub(r"\s+", " ", _plain(t))
+    return any(not _GC_INVESTEE.match(s, m.end()) for m in _GC.finditer(s))
 
 
 def going_concern_rule(parecer: pd.DataFrame) -> pd.DataFrame:
-    """Flag filings whose auditor text states a material uncertainty about going concern."""
-    p = parecer.assign(gc_flag=parecer["text"].map(lambda t: bool(_GC.search(_plain(t)))))
+    """Flag filings whose auditor text states a material uncertainty about the filer's going concern."""
+    p = parecer.assign(gc_flag=parecer["text"].map(_gc_text))
     return p.groupby(["cd_cvm", "dt_refer", "dt_receb"], as_index=False)["gc_flag"].any()

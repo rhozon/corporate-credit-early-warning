@@ -91,6 +91,44 @@ def test_going_concern_rule_separates_doubt_from_boilerplate():
     assert gc[1] and not gc[2]
 
 
+AUDITOR_RESPONSIBILITY = (
+    "Concluímos sobre a adequação do uso, pela administração, da base contábil de continuidade operacional e, "
+    "com base nas evidências de auditoria obtidas, se  existe incerteza relevante em relação a eventos ou condições "
+    "que possam levantar dúvida significativa em relação à capacidade de continuidade operacional da Companhia. "
+    "Se concluirmos que existe incerteza relevante, devemos chamar atenção em nosso relatório de auditoria para as "
+    "respectivas divulgações nas demonstrações financeiras ou incluir modificação em nossa opinião, se as "
+    "divulgações forem inadequadas. Todavia, eventos ou condições futuras podem levar a Companhia a não mais se "
+    "manter em continuidade operacional.")
+
+
+def _gc(texts):
+    p = pd.DataFrame({"cd_cvm": range(len(texts)), "dt_refer": ["2022-12-31"] * len(texts),
+                      "dt_receb": pd.to_datetime(["2023-03-20"] * len(texts)), "kind": ["Relatório"] * len(texts),
+                      "text": texts})
+    return features.going_concern_rule(p).set_index("cd_cvm")["gc_flag"].tolist()
+
+
+def test_going_concern_rule_ignores_the_auditor_responsibility_paragraph():
+    glued = "Respostas às divulgações feitas pela administração." + AUDITOR_RESPONSIBILITY
+    assert _gc([AUDITOR_RESPONSIBILITY, glued]) == [False, False]
+
+
+def test_going_concern_rule_reads_the_section_and_older_emphasis_forms():
+    texts = [AUDITOR_RESPONSIBILITY + " Incerteza relevante relacionada com a continuidade operacional "
+             "Chamamos a atenção para a nota 1 às demonstrações financeiras.",
+             "Essa situação, entre outras descritas na nota 1, suscita dúvida substancial sobre a sua "
+             "continuidade operacional.",
+             "Essas condições indicam a existência de incerteza significativa que pode levantar dúvida "
+             "significativa quanto à capacidade de continuidade operacional da Companhia."]
+    assert _gc(texts) == [True, True, True]
+
+
+def test_going_concern_rule_ignores_doubt_about_an_investee():
+    text = ("com ênfases de (i) riscos relacionados a leis e regulamentos, (ii) incerteza relevante que pode levantar "
+            "dúvida significativa a capacidade de continuidade operacional da controlada em conjunto indireta.")
+    assert _gc([text]) == [False]
+
+
 def test_read_parecer_links_text_to_filing_date(tmp_path):
     idx = ("CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;CATEG_DOC;ID_DOC;DT_RECEB;LINK_DOC\n"
            "00.000.000/0001-00;2024-03-31;1;ACME;001234;ITR;1;2024-05-10;x\n")
