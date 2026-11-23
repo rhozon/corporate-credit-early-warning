@@ -32,11 +32,15 @@ print(
     + (f" Gradient-boosted and random-forest survival models reach an out-of-time AUC of about "
        f"{fmt(N['test_h1'].set_index('model').loc[['xgb_pd12', 'xgb_cox', 'rsf'], 'auc'].mean(), 2)} for the "
        f"12-month PD, against {fmt(N['test_h1'].set_index('model').at['altman', 'auc'], 2)} for the Altman score and "
-       f"{fmt(N['test_h1'].set_index('model').at['logit_hazard', 'auc'], 2)} for the hazard logit; the neural "
-       f"networks do not beat the benchmarks, and no model is calibrated at every horizon. The pre-registered test "
-       f"finds no gain from the language-model signals (AUC {fmt(N['test_h2']['auc_signals'], 3)} against "
-       f"{fmt(N['test_h2']['auc_base'], 3)}); an exploratory rerun that keeps the rarest signal counts, which the "
-       f"registered preprocessing had erased, gives {fmt(N['test_h2_exploratory']['all']['auc_signals'], 3)}."
+       f"{fmt(N['test_h1'].set_index('model').at['logit_hazard', 'auc'], 2)} for the hazard logit. "
+       + N["claims"]["abstract_h1"] +
+       f" No model is calibrated at every horizon. The pre-registered test finds no gain from the language-model "
+       f"signals (AUC {fmt(N['test_h2']['auc_signals'], 3)} against {fmt(N['test_h2']['auc_base'], 3)})"
+       + ("; nor does an exploratory rerun that keeps the rarest signal counts, which the registered preprocessing "
+          f"had erased ({fmt(N['test_h2_exploratory']['all']['auc_signals'], 3)})."
+          if N["claims"]["exploratory_gain"] is False else
+          f"; an exploratory rerun that keeps the rarest signal counts, which the registered preprocessing had "
+          f"erased, gives {fmt(N['test_h2_exploratory']['all']['auc_signals'], 3)}.")
        if N["test_h1"] is not None and N["test_h2"] and N["test_h2_exploratory"] else "")
     + f" A systematic review under PRISMA 2020 ({fmt(N['prisma']['screened'])} "
     f"records screened, {fmt(N['prisma']['included'])} included) shows that survival models are a "
@@ -58,12 +62,33 @@ por empresa. Fora do tempo, os modelos de árvores chegam a uma AUC de cerca de
 `{python} fmt(N['test_h1'].set_index('model').loc[['xgb_pd12', 'xgb_cox', 'rsf'], 'auc'].mean(), 2).replace('.', ',')`
 na PD de 12 meses, contra
 `{python} fmt(N['test_h1'].set_index('model').at['altman', 'auc'], 2).replace('.', ',')` do escore
-de Altman; nenhum modelo é bem calibrado em todos os prazos. O teste pré-registrado não encontra
-ganho nos sinais lidos pelos modelos de linguagem; uma rodada exploratória que mantém os sinais
-mais raros sugere um ganho que precisa de um novo período de teste para ser confirmado. Uma
+de Altman e
+`{python} fmt(N['test_h1'].set_index('model').at['logit_hazard', 'auc'], 2).replace('.', ',')` do logit
+de risco. Os modelos de árvores superam o escore de Altman mesmo quando as empresas são reamostradas
+inteiras, mas nesse teste nenhum se separa do logit de risco; nenhum modelo é bem calibrado em todos
+os prazos. Nem o teste pré-registrado nem a rodada exploratória que mantém os sinais mais raros
+encontram ganho nos sinais lidos pelos modelos de linguagem. Uma
 revisão sistemática (PRISMA 2020) mostra as lacunas que o estudo ocupa. Por fim,
 um parecer de crédito gerado por agentes, com trava numérica, e um desenho de serviço de
 monitoramento alinhado à Resolução CMN 4.966/2021.
+
+**Correction (23 November 2026).** An independent review of the code, after the first version
+was published, found errors that changed published results. The going-concern flag also matched
+the auditor-responsibility paragraph that every audit opinion carries since 2016, so it was set
+for most filings from then on, including the memo on Casas Bahia, which stated a going-concern
+paragraph that the auditor's report did not contain. The calibration sample (H3) kept rows whose
+window was still open only when they had ended in a filing, which overstated the observed rates
+and produced the first version's finding that the models underestimate the long-horizon rate.
+Episodes still open in the registry were closed at their last filing, and the trailing twelve
+months were wrong for fiscal years ending in March. The code was corrected, each fix with a test,
+and the whole test was run again; the hypotheses, models, split and primary test did not change.
+The corrections are listed in `PREREGISTRATION.md`, and every number in this version comes from
+the corrected run. Comparisons now also report a test that resamples firms whole, beside DeLong's.
+Three conclusions of the first version changed: in the corrected run the hazard logit is a much
+stronger benchmark (AUC 0.816, against 0.758 before), and no model's edge over it survives the
+firm-resampled test;
+most models now overestimate the long-horizon rate rather than underestimate it; and the gain the
+exploratory signal test suggested (an AUC of 0.783) does not appear in the corrected run.
 
 # Introduction
 
@@ -291,7 +316,9 @@ print(
     f"the company itself, ongoing proceedings, exits, or other matters such as a customer's or a "
     f"subsidiary's recovery. An episode opens at the company's own filing and closes at its exit; a gap "
     f"of more than a year, or an escalation from out-of-court to judicial recovery or to bankruptcy, "
-    f"opens a new episode. Liquidations are excluded. The base holds {fmt(N['events_all'])} events in "
+    f"opens a new episode. An episode that holds the registry's current status has not ended, however "
+    f"long ago its last filing was, and a bankruptcy never ends; only an escalation opens a new episode "
+    f"after them. Liquidations are excluded. The base holds {fmt(N['events_all'])} events in "
     f"{fmt(N['event_firms'])} non-financial firms, {fmt(N['events_window'])} of them from 2011; "
     f"{fmt(N['left_truncated'])} firms already in recovery on 1 January 2011 are left out."
 )
@@ -304,9 +331,14 @@ if R:
           f"same company. An event the reader confirms, or dates within seven days, stands; one it dates "
           f"elsewhere moves to that date, or goes if the company already has an event within seven days of the "
           f"new date; one it attributes to another company (a parent, a subsidiary, an affiliate) goes; where it "
-          f"cannot tell, the first decision stands. Of the {fmt(R['checked'])} events, {fmt(R['stand'])} stand "
+          f"cannot tell, the first decision stands. Removing an event rejects the document that opened its "
+          f"episode, not the episode: when the company filed again within it, the episode opens at that filing. "
+          f"Of the {fmt(R['checked'])} events, {fmt(R['stand'])} stand "
           f"({fmt(R['unsure'])} of them because the second reader could not tell), {fmt(R['moved'])} move and "
-          f"{fmt(R['dropped'])} go. The counts above are after this check.")
+          f"{fmt(R['dropped'])} go" + (f", {fmt(R['rebuilt'])} of these reopening at the company's next filing"
+                                        if R.get('rebuilt') else "")
+          + (f"; {spell(R['merged'])} had since been merged into an episode still open"
+             if R.get('merged') else "") + ". The counts above are after this check.")
 else:
     print(f"\n\n{fmt(None)} The event list is being checked against the source filings.")
 ```
@@ -337,7 +369,11 @@ liabilities, leverage, current ratio, cash over assets, interest coverage, margi
 size (assets deflated by IPCA), a negative-equity flag and a flag for a loss in the last four
 quarters. Flows are trailing twelve months. Disclosure behaviour adds the filing delay, the number
 of restatements in the last four quarters, the age of the latest information, the going-concern
-flag from a text rule on the auditor's report and an indicator of a previous recovery. The six
+flag and an indicator of a previous recovery. The going-concern flag comes from a text rule that
+accepts only a statement of material uncertainty about the filer, such as the section the auditor
+opens under that heading; the conditional sentence about the auditor's responsibilities, present
+in every opinion since the 2016 reports, does not set it. Fiscal years that end in a month other
+than December are handled when flows are summed over twelve months. The six
 macroeconomic series complete the base set.
 
 ## Models
@@ -360,7 +396,10 @@ intercept and slope [@vancalster2019]. For the term structure we report Harrell'
 and Uno's [@uno2011] concordance, time-dependent AUC at 12, 24 and 35 months and the integrated
 Brier score [@graf1999]. Intervals are 95% percentiles of a bootstrap that resamples firms, not
 rows, because rows of one firm are dependent. Differences in AUC are tested with DeLong's method
-[@delong1988], with Holm's correction [@holm1979] for the secondary comparisons.
+[@delong1988], with Holm's correction [@holm1979] for the secondary comparisons. DeLong's test
+treats rows as independent; since the events come from a few dozen firms, every comparison also
+reports a paired bootstrap that resamples firms whole and refits nothing, with its one-sided
+p-value and 95% interval for the difference. Where the two disagree, the text says so.
 
 ## Language-model signals
 
@@ -371,19 +410,25 @@ print(
     f"the panel since 2010 is classified into eleven categories of distress: debt restructuring, "
     f"covenant breach or waiver, missed payment, asset sale for liquidity, emergency capital, "
     f"going-concern doubt, change of chief executive or chief financial officer, rating downgrade, the "
-    f"company's own recovery, a subsidiary's recovery, and sanction. The company's name, its trade names "
-    f"and its tax number are masked before the text reaches the model, so that the model's memory of what "
-    f"later happened to a known company cannot leak into the label. Announcements of the company's own "
+    f"company's own recovery, a subsidiary's recovery, and sanction. The company's registered name and its "
+    f"tax number are masked before the text reaches the model, so that the model's memory of what later "
+    f"happened to a known company is less likely to leak into the label; trade names that differ from the "
+    f"registered name are not masked. Announcements of the company's own "
     f"recovery are kept for auditing the event base but never used as a predictor. A document enters the "
     f"panel only from its delivery date; the features are counts of each category in the 4 and 12 months "
     f"before the quarter. {fmt(N.get('signal_any'))} documents carry at least one signal."
 )
 ```
 
-Reliability is measured two ways. A second model reads a random subsample of 3,000 documents and
-agreement is reported per category as Cohen's kappa [@cohen1960], next to the number of flags from
-each reader, since on a rare category a few extra flags move kappa a long way. And 200 documents
-drawn at random are read in full, to measure what the subject line misses.
+```{python}
+#| output: asis
+_K, _L = N["signals_kappa"], N["subject_loss"]
+print(f"Reliability is measured two ways. A second model reads a random subsample of "
+      f"{fmt(next(iter(_K.values()))['n']) if _K else fmt(None)} documents and agreement is reported per category "
+      f"as Cohen's kappa [@cohen1960], next to the number of flags from each reader, since on a rare category a few "
+      f"extra flags move kappa a long way. And {fmt(_L['sample']) if _L else fmt(None)} documents drawn at random "
+      f"are read in full, to measure what the subject line misses.")
+```
 
 ## Pre-registered test of H2
 
@@ -413,43 +458,72 @@ words = lambda ms: ", ".join(nm(m) for m in ms[:-1]) + (" and " if len(ms) > 1 e
 if H1 is not None:
     r = H1.set_index("model")
     trees = [m for m in ("xgb_cox", "xgb_pd12", "rsf") if m in r.index]
-    beats = DL[DL["p_holm"] < 0.05]
-    won = {m: set(beats.loc[beats["model"] == m, "versus"]) for m in r.index}
-    both = [m for m in r.index if {"altman", "logit_hazard"} <= won[m]]
-    only_logit = [m for m in r.index if m not in both and "logit_hazard" in won[m]]
-    neither = [m for m in r.index if m not in both + only_logit + ["altman", "logit_hazard"]]
+    def wins(col):
+        b = DL[DL[col] < 0.05]
+        return {m: set(b.loc[b["model"] == m, "versus"]) for m in r.index}
+
+    def groups(won):
+        both = [m for m in r.index if {"altman", "logit_hazard"} <= won[m]]
+        only_logit = [m for m in r.index if m not in both and "logit_hazard" in won[m]]
+        only_altman = [m for m in r.index if m not in both and "altman" in won[m]]
+        neither = [m for m in r.index if m not in both + only_logit + only_altman + ["altman", "logit_hazard"]]
+        return both, only_logit, only_altman, neither
+
+    def says(won):
+        both, only_logit, only_altman, neither = groups(won)
+        parts = [f"{words(both)} beat{'s' if len(both) == 1 else ''} both benchmarks"] if both else []
+        parts += [f"{words(g)} beat{'s' if len(g) == 1 else ''} {what}" for g, what in
+                  ((only_logit, "the logit only"), (only_altman, "the Altman score only"), (neither, "neither")) if g]
+        return "; ".join(parts)
+
+    best = r["auc"].sort_values(ascending=False).index
+    lead = [m for m in best[:3]]
+    both_d, both_c = groups(wins("p_holm"))[0], groups(wins("p_cluster_holm"))[0]
     text = (f"On the {fmt(int(r['n'].iloc[0]))} test firm-quarters whose 12-month window is observed "
-            f"({fmt(int(r['events'].iloc[0]))} of them followed by a filing within 12 months), the tree ensembles "
-            f"rank firms best: "
-            + "; ".join(f"{nm(m)} AUC {fmt(r.at[m, 'auc'], 3)} [{fmt(r.at[m, 'auc_lo'], 3)}, {fmt(r.at[m, 'auc_hi'], 3)}]"
-                        for m in trees)
+            f"({fmt(int(r['events'].iloc[0]))} of them followed by a filing within 12 months), the highest AUCs are: "
+            + "; ".join(f"{nm(m)} {fmt(r.at[m, 'auc'], 3)} [{fmt(r.at[m, 'auc_lo'], 3)}, {fmt(r.at[m, 'auc_hi'], 3)}]"
+                        for m in lead)
             + f"; against {fmt(r.at['altman', 'auc'], 3)} for the Altman score and "
-            f"{fmt(r.at['logit_hazard', 'auc'], 3)} for the hazard logit (@tbl-h1). {words(both)} beat both "
-            f"benchmarks after Holm's correction (@tbl-delong)")
-    if only_logit:
-        text += f"; {words(only_logit)} beat{'s' if len(only_logit) == 1 else ''} the logit only"
-    if neither:
-        text += f"; {words(neither)} beat{'s' if len(neither) == 1 else ''} neither"
-    text += (". H1 holds for the tree ensembles. The neural networks do not deliver the gain on a panel of this "
-             "size, and the intervals overlap enough that the order among the three ensembles is not established.")
+            f"{fmt(r.at['logit_hazard', 'auc'], 3)} for the hazard logit (@tbl-h1). With DeLong's test and Holm's "
+            f"correction (@tbl-delong), {says(wins('p_holm'))}. With the firm-clustered test, {says(wins('p_cluster_holm'))}.")
+    ens = [m for m in trees if m in both_c]
+    text += (f" H1 holds for {words(ens)} under both tests." if ens else
+             " No model beats both benchmarks under the firm-clustered test, so H1 is not established once the "
+             "dependence of a firm's quarters is taken into account.")
+    text += " The intervals overlap enough that the order among the leading models is not established."
     print(text)
 if H3 is not None:
     h = H3.set_index(["model", "horizon"])
     obs = {k: H3.loc[H3["horizon"] == k, "observed"].iloc[0] for k in (12, 24, 36)}
     m12 = H3[H3["horizon"] == 12].set_index("model")["mean_pd"]
-    m36 = H3[(H3["horizon"] == 36) & (H3["model"] != "deephit")].set_index("model")["mean_pd"]
-    b36 = H3[H3["horizon"] == 36].set_index("model")["brier"].idxmin()
-    close = H3[H3["horizon"] == 12].assign(gap=lambda d: (d["mean_pd"] - d["observed"]).abs()).nsmallest(2, "gap")
-    print(f"\n\nNo model is calibrated over the whole term structure (@tbl-h3). At 12 months the observed rate "
-          f"is {fmt(obs[12], 2, pct=True)} and the mean PD ranges from {fmt(m12.min(), 2, pct=True)} "
-          f"({nm(m12.idxmin())}) to {fmt(m12.max(), 2, pct=True)} ({nm(m12.idxmax())}); "
-          f"{words(list(close['model']))} come closest. At 36 months every model but DeepHit underestimates: "
-          f"the observed rate is {fmt(obs[36], 1, pct=True)} and the mean PDs run from {fmt(m36.min(), 1, pct=True)} "
-          f"to {fmt(m36.max(), 1, pct=True)}, while DeepHit overestimates by a wide margin. Calibration slopes "
-          f"are below one for every model except Cox, whose slopes above two mean its PDs are too compressed. "
-          f"{nm(b36)} has the lowest Brier score at 36 months. H3 holds only in part: the best long-horizon "
-          f"curve comes from a survival model, but survival models as a group are not better calibrated than "
-          f"the hazard logit, and every curve needs recalibration before it feeds a lifetime provision.")
+    m36 = H3[H3["horizon"] == 36].set_index("model")["mean_pd"]
+    br36 = H3[H3["horizon"] == 36].set_index("model")["brier"]
+    sl = H3.set_index(["model", "horizon"])["calib_slope"]
+    b36 = br36.idxmin()
+    close = lambda k: H3[H3["horizon"] == k].assign(gap=lambda d: (d["mean_pd"] - d["observed"]).abs()).nsmallest(2, "gap")  # noqa: E731
+    over = [m for m in m36.index if m36[m] > obs[36]]
+    under = [m for m in m36.index if m36[m] <= obs[36]]
+    flat = [m for m in sl.index.get_level_values(0).unique() if (sl.loc[m] < 1).all()]
+    steep = [m for m in sl.index.get_level_values(0).unique() if (sl.loc[m] > 1).all()]
+    surv = [m for m in ("cox", "xgb_cox", "rsf", "deepsurv", "deephit") if m in br36.index]
+    better = [m for m in surv if br36[m] < br36["logit_hazard"]]
+    side = (f"{words(over)} overestimate{'s' if len(over) == 1 else ''} it" if over else "") + \
+           ("; " if over and under else "") + \
+           (f"{words(under)} underestimate{'s' if len(under) == 1 else ''} it" if under else "")
+    print(f"\n\nObserved rates are measured on the rows whose window has closed by the end of the data, chosen "
+          f"by date alone (@tbl-h3). At 12 months the observed rate is {fmt(obs[12], 2, pct=True)} and the mean PD "
+          f"ranges from {fmt(m12.min(), 2, pct=True)} ({nm(m12.idxmin())}) to {fmt(m12.max(), 2, pct=True)} "
+          f"({nm(m12.idxmax())}); {words(list(close(12)['model']))} come closest. At 36 months the observed rate is "
+          f"{fmt(obs[36], 1, pct=True)}: {side}; {words(list(close(36)['model']))} come closest."
+          + (f" Calibration slopes are below one at every horizon for {words(flat)}, so their PDs spread more than the "
+             f"outcomes" if flat else "")
+          + (f"{'; ' if flat else ' Calibration slopes are '}above one at every horizon for {words(steep)}, whose PDs "
+             f"are too compressed" if steep else "") + ". "
+          f"{nm(b36)} has the lowest Brier score at 36 months, and {spell(len(better))} of the {spell(len(surv))} "
+          f"survival models have a lower 36-month Brier score than the hazard logit. "
+          + ("H3 holds in part: " if 0 < len(better) < len(surv) else ("H3 holds: " if better else "H3 does not hold: "))
+          + "the level of every curve has to be checked against the lender's own defaults before it feeds a "
+          "lifetime provision.")
 ```
 
 ```{python}
@@ -472,9 +546,12 @@ else:
 #| output: asis
 if DL is not None:
     d = pd.DataFrame({"Model": [nm(m) for m in DL["model"]], "Versus": [nm(m) for m in DL["versus"]],
-                      "AUC difference": DL["auc_diff"], "p": DL["p"], "p (Holm)": DL["p_holm"]})
-    print(": DeLong tests of the 12-month PD against the Altman score and the hazard logit (one-sided, model "
-          "better), with Holm-adjusted p-values. {#tbl-delong}\n")
+                      "AUC difference": DL["auc_diff"],
+                      "95% CI (firms)": [f"{fmt(a, 3)} to {fmt(b, 3)}" for a, b in zip(DL["diff_lo"], DL["diff_hi"])],
+                      "p DeLong (Holm)": DL["p_holm"], "p firms (Holm)": DL["p_cluster_holm"]})
+    print(": Tests of the 12-month PD against the Altman score and the hazard logit (one-sided, model better): "
+          "DeLong's test, and a paired bootstrap that resamples firms whole, with its interval for the difference; "
+          "both p-values Holm-adjusted. {#tbl-delong}\n")
     print(table(d))
 ```
 
@@ -489,7 +566,7 @@ if H3 is not None:
             row[f"Slope {k}m"] = h.at[(m, k), "calib_slope"]
         row["Brier 36m"] = h.at[(m, 36), "brier"]
         rows.append(row)
-    print(f": Calibration of the PD term structure on rows whose window is observed: mean PD and calibration "
+    print(f": Calibration of the PD term structure on rows whose window has closed: mean PD and calibration "
           f"slope at each horizon, and the Brier score at 36 months. Observed rates: {fmt(obs[12], 2, pct=True)} "
           f"at 12 months, {fmt(obs[24], 2, pct=True)} at 24 and {fmt(obs[36], 2, pct=True)} at 36. {{#tbl-h3}}\n")
     print(table(pd.DataFrame(rows), 3))
@@ -535,10 +612,11 @@ if H2:
     txt = (f"\n\nThe pre-registered test does not support H2. On the {fmt(H2['n'])} test rows "
            f"({fmt(H2['events'])} followed by a filing within 12 months), the hazard logit reaches an AUC of "
            f"{fmt(H2['auc_base'], 3)} without the signals and {fmt(H2['auc_signals'], 3)} with them (one-sided "
-           f"DeLong p = {fmt(H2['p_one_sided'], 2)}).")
+           f"DeLong p = {fmt(H2['p_one_sided'], 2)}; resampling firms, p = {fmt(H2['p_cluster_one_sided'], 2)}).")
     if H2R:
-        txt += (f" With the seven reliable categories only, the AUC is {fmt(H2R['auc_signals'], 3)} "
-                f"(p = {fmt(H2R['p_one_sided'], 2)}).")
+        txt += (f" With the {spell(len(H2R['signals']))} reliable categories only, the AUC is "
+                f"{fmt(H2R['auc_signals'], 3)} (p = {fmt(H2R['p_one_sided'], 2)}; resampling firms, "
+                f"p = {fmt(H2R['p_cluster_one_sided'], 2)}).")
     if H2X:
         flat = [CATEGORY_NAMES[c[4:-4]].lower() for c in H2X["flat_after_winsorising"]]
         txt += (f" One flaw lies in the preprocessing, which was fixed with the rest of the code before the "
@@ -547,9 +625,12 @@ if H2:
                 f"than 1% of those rows, so winsorising turned them into constant zeros and the registered tests ran "
                 f"without them. The tests were repeated with the signal counts left unclipped. That run was decided "
                 f"after the test period was opened and is exploratory: it gives an AUC of "
-                f"{fmt(H2X['all']['auc_signals'], 3)} with all signals (p = {fmt(H2X['all']['p_one_sided'], 2)}) "
+                f"{fmt(H2X['all']['auc_signals'], 3)} with all signals (DeLong p = {fmt(H2X['all']['p_one_sided'], 2)}; "
+                f"resampling firms, p = {fmt(H2X['all']['p_cluster_one_sided'], 2)}, interval for the gain "
+                f"{fmt(H2X['all']['diff_lo'], 3)} to {fmt(H2X['all']['diff_hi'], 3)}) "
                 f"and {fmt(H2X['reliable']['auc_signals'], 3)} with the reliable ones "
-                f"(p = {fmt(H2X['reliable']['p_one_sided'], 2)}).")
+                f"(p = {fmt(H2X['reliable']['p_one_sided'], 2)}; resampling firms, "
+                f"p = {fmt(H2X['reliable']['p_cluster_one_sided'], 2)}).")
     if AB is not None:
         sec = AB[(AB["role"] == "secondary") & (AB["model"] != "altman")]  # Altman's score has fixed inputs
         txt += (f" Across the other {spell(len(sec))} models that take the signals, adding them changes the AUC by between "
@@ -579,8 +660,9 @@ if AB is not None:
     ab = pd.DataFrame({"Model": [nm(m) for m in AB["model"]], "Role": AB["role"], "AUC base": AB["auc_base"],
                        "AUC with signals": AB["auc_signals"], "Difference": AB["auc_diff"], "p": AB["p"],
                        "p (Holm)": AB["p_holm"].map(lambda v: "" if v != v else fmt(v, 3))})
-    print(": Each model with and without the language-model signals (registered preprocessing). The hazard logit's "
-          "row is the pre-registered test; Holm's correction covers the seven secondary rows. {#tbl-ablation}\n")
+    print(f": Each model with and without the language-model signals (registered preprocessing). The hazard logit's "
+          f"row is the pre-registered test; Holm's correction covers the {spell(int((AB['role'] == 'secondary').sum()))} "
+          f"secondary rows. {{#tbl-ablation}}\n")
     print(table(ab))
 ```
 
@@ -621,7 +703,9 @@ reader, which summarises the recent filings, and a writer, which drafts the memo
 critic then checks every number and every date in the draft against the values the tools returned;
 a memo with a number or a year that no tool produced is blocked. Language models are known to
 state plausible facts that no source supports [@ji2023]; the critic does not ask the model to
-behave, it removes the possibility.
+behave, it rejects any figure without a source. It does not check that a figure sits in the right
+place: a memo that swapped two values the tools did return, such as the 12- and 36-month PDs,
+would pass.
 
 ```{python}
 #| output: asis
@@ -632,17 +716,18 @@ if M:
     hi = max(M, key=lambda m: m["pd12"])
     hi_name = [k for k, v in by.items() if v is hi][0]
     others = [k for k, v in by.items() if v is not hi]
+    oth = ", ".join(fmt(by[k]["pd12"], 1, pct=True) + f" ({k})" for k in others)
     print(f"The agent was run on {spell(len(M))} past cases ({', '.join(by)}), each as of twelve months before "
           f"the filing, with the hazard logit fitted on the training years and only what was public on that "
           f"date. The registry name, which now carries the company's later status, is cut back to the name "
-          f"alone, and other listed companies named in a memo are masked in the published copy. All "
-          f"{spell(sum(not m['blocked'] for m in M))} memos passed the critic. On the first run it blocked three, "
-          f"each for a value the memo had copied correctly: a negative rate read without its sign, and a "
-          f"crop year quoted from a filing subject; both cases are now tested. A year before the filing, the "
-          f"12-month PD of {hi_name} was {fmt(hi['pd12'], 1, pct=True)}, about {spell(round(hi['pd12'] / rate))} times "
-          f"the average 12-month rate in the training years ({fmt(rate, 1, pct=True)}); for "
-          f"{', '.join(others[:-1])} and {others[-1]} it was below that average "
-          f"({', '.join(fmt(by[k]['pd12'], 1, pct=True) for k in others)}). Americanas filed days after "
+          f"alone, and other listed companies named in a memo are masked in the published copy. "
+          + (f"All {spell(len(M))} memos passed the critic. " if not any(m["blocked"] for m in M) else
+             f"{spell(sum(not m['blocked'] for m in M)).capitalize()} of the {spell(len(M))} memos passed the critic. ")
+          + f""
+          f"A year before the filing, the 12-month PD of {hi_name} was {fmt(hi['pd12'], 1, pct=True)}, "
+          f"{fmt(hi['pd12'] / rate, 1)} times the average 12-month rate in the training years "
+          f"({fmt(rate, 1, pct=True)}); for the others it was {oth}. "
+          f"Americanas filed days after "
           f"disclosing an accounting inconsistency, so the statements a model could read a year earlier did not "
           f"show the problem. These runs illustrate the product and are not evidence for H2: the names are not "
           f"masked in the memo, and the model may know how each story ended. The memos, in Portuguese, are in "
@@ -679,9 +764,12 @@ close either comes to a human reading is not measured. Screening and extraction 
 done by language models; their agreement is reported, but no human screened the full set, and
 studies without an open-access text enter only through their abstracts. The signals are read from
 subject lines; the full-text sample measures what that costs. The registered preprocessing erased
-the rarest signal counts, so the test of H2 that keeps them is exploratory and needs a later test
-period to confirm it. The memos on past cases name firms whose stories are public, and the model
-that writes them may know how those stories ended.
+the rarest signal counts, so the test of H2 that keeps them is exploratory, whatever it shows. The memos on past cases name firms whose stories are public, and the model
+that writes them may know how those stories ended. Trade names that differ from a company's
+registered name are not masked in the signal prompts. The corrections listed at the top of the
+paper were made after the test period was opened; they fix code that did not do what the
+registration describes, and the hypotheses, models and primary test did not change, but a reader
+should weigh results obtained after an opening accordingly.
 
 # Conclusion
 
@@ -693,24 +781,36 @@ if H1 is not None and H2 and H2X:
     yrs = RR.pivot_table(index="model", columns="year", values="auc") if RR is not None else None
     wins = int((yrs.loc["xgb_cox"] > yrs.loc["altman"]).sum()) if yrs is not None else None
     hi = max(M, key=lambda m: m["pd12"]) if M else None
+    C = N["claims"]
+    ens_a = [m for m in ("xgb_pd12", "xgb_cox", "rsf") if m in C["beats_altman_c"]]
+    ens_l = [m for m in ("xgb_pd12", "xgb_cox", "rsf") if m in C["beats_logit_c"]]
+    rel = ("tree ensembles do it better than both benchmarks the literature uses, the accounting score and the "
+           "hazard logit" if ens_a and ens_l else
+           "tree ensembles do it better than the accounting score, while their edge over a well-specified hazard "
+           "logit is not significant once a firm's quarters are resampled together" if ens_a else
+           "the differences among models are within what a panel of this size can tell apart")
     print(
         f"Public filings are enough to rank Brazilian listed companies by their risk of judicial or "
-        f"out-of-court recovery a year ahead, and tree ensembles do it better than the accounting score and the "
-        f"hazard logit the literature uses as benchmarks: an out-of-time AUC between {fmt(ens.min(), 3)} and "
-        f"{fmt(ens.max(), 3)}, against {fmt(r.at['altman', 'auc'], 3)} and {fmt(r.at['logit_hazard', 'auc'], 3)}. "
-        f"The advantage holds under the narrow event definition"
+        f"out-of-court recovery a year ahead, and {rel}: an out-of-time AUC between {fmt(ens.min(), 3)} and "
+        f"{fmt(ens.max(), 3)} for the ensembles, against {fmt(r.at['altman', 'auc'], 3)} for the Altman score and "
+        f"{fmt(r.at['logit_hazard', 'auc'], 3)} for the hazard logit. The ensembles stay ahead of the Altman score "
+        f"under the narrow event definition"
         + (f" and in {spell(wins)} of the {spell(yrs.shape[1])} years of the moving-origin refit" if wins is not None else "")
-        + ". The neural networks do not add to it on a panel of this size. The levels are another matter: every "
-        "model misses the long-horizon rate, so a lender that uses these curves for lifetime provisions under "
-        "Resolution 4,966 has to recalibrate them on its own portfolio.\n\n"
-        f"Whether language models add to accounting data is not settled. The test registered in advance says no "
-        f"(AUC {fmt(H2['auc_signals'], 3)} with the signals, {fmt(H2['auc_base'], 3)} without). The same test with "
-        f"the rarest signals kept (covenant breaches, missed payments, going-concern doubts, rating downgrades and "
-        f"subsidiaries' recoveries) gives {fmt(H2X['all']['auc_signals'], 3)}, but that analysis came after the "
-        f"test was opened and needs a new test period before it counts."
-        + (f" The memos on past cases show what a monitor can and cannot do. A year before its filing, the hazard "
-           f"logit put Casas Bahia at {fmt(hi['pd12'], 1, pct=True)}, about four times the average 12-month rate; "
-           f"it could not see Americanas, whose problem sat in accounts that no outside model could read." if hi else "")
+        + ". The levels are another matter: no model is calibrated at every horizon, so a lender that uses these "
+        "curves for lifetime provisions under Resolution 4,966 has to recalibrate them on its own portfolio.\n\n"
+        + (f"Language models did not add to accounting data in this test. The test registered in advance finds no "
+           f"gain (AUC {fmt(H2['auc_signals'], 3)} with the signals, {fmt(H2['auc_base'], 3)} without), and neither "
+           f"does the exploratory rerun that keeps the rarest signals ({fmt(H2X['all']['auc_signals'], 3)}). Signals "
+           f"read from subject lines may be too thin; whole documents are the next thing to test."
+           if C["exploratory_gain"] is False else
+           f"Whether language models add to accounting data is not settled. The test registered in advance says no "
+           f"(AUC {fmt(H2['auc_signals'], 3)} with the signals, {fmt(H2['auc_base'], 3)} without). The same test with "
+           f"the rarest signals kept gives {fmt(H2X['all']['auc_signals'], 3)}, but that analysis came after the "
+           f"test was opened and needs a new test period before it counts.")
+        + (f" The memos on past cases show what a monitor can and cannot do. A year before the filing, the hazard "
+           f"logit's highest PD among them was {fmt(hi['pd12'], 1, pct=True)}, {fmt(hi['pd12'] / N['train_rate12'], 1)} "
+           f"times the average 12-month rate; it could not see Americanas, whose problem sat in accounts that no "
+           f"outside model could read." if hi else "")
         + "\n\nThe monitor of the previous section follows from these results: rank the portfolio with a tree "
         "ensemble, recalibrate the curves on the client's own defaults, read whole filings rather than subject "
         "lines, and let a deterministic critic check every number a language model writes."

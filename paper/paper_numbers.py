@@ -32,17 +32,21 @@ def load() -> dict:
     n["event_firms"] = ev["cd_cvm"].nunique()
     n["events_window"] = int((ev["event_date"] >= "2011-01-01").sum())
     n["window_firms"] = int(ev.loc[ev["event_date"] >= "2011-01-01", "cd_cvm"].nunique())
-    n["left_truncated"] = int(ev["left_truncated"].sum()) if "left_truncated" in ev else None
+    n["left_truncated"] = int(ev.loc[ev["left_truncated"].astype(bool), "cd_cvm"].nunique()) \
+        if "left_truncated" in ev else None
     n["events_reviewed"] = (ROOT / "data" / "events_reviewed.csv").exists()
     second = ROOT / "data" / "events_second_reader.csv"
     if n["events_reviewed"] and second.exists():
         draft = pd.read_csv(ROOT / "data" / "events_draft.csv")
         checked = ev[ev["review"] != "not_in_sheet"]
-        n["review"] = {"checked": len(pd.read_csv(second)),
-                       "stand": int((checked["review"] == "confirmed").sum()),
-                       "unsure": int(checked["review_note"].fillna("").str.startswith("segundo leitor incerto").sum()),
-                       "moved": int((checked["review"] == "date_corrected").sum()),
-                       "dropped": len(draft) - len(ev)}
+        rebuilt = int((ev["review"] == "rebuilt_after_drop").sum())
+        r = {"checked": len(pd.read_csv(second)),
+             "stand": int((checked["review"] == "confirmed").sum()),
+             "unsure": int(checked["review_note"].fillna("").str.startswith("segundo leitor incerto").sum()),
+             "moved": int((checked["review"] == "date_corrected").sum()),
+             "dropped": len(draft) - len(ev) + rebuilt, "rebuilt": rebuilt}
+        r["merged"] = r["checked"] - r["stand"] - r["moved"] - r["dropped"]
+        n["review"] = r
     else:
         n["review"] = None
 
@@ -76,7 +80,36 @@ def load() -> dict:
     for name in ("test_h2_ablation", "test_robust_narrow", "test_robust_rolling"):
         f = ROOT / "results" / f"{name}.csv"
         n[name] = pd.read_csv(f) if f.exists() else None
+    n["claims"] = _claims(n)
     return n
+
+
+def _names(ms: list[str]) -> str:
+    ms = [MODEL_NAMES.get(m, m) for m in ms]
+    return ", ".join(ms[:-1]) + (" and " if len(ms) > 1 else "") + ms[-1] if ms else ""
+
+
+def _claims(n: dict) -> dict:
+    """Sentences whose direction depends on the results, so the text cannot outlive a rerun."""
+    out = {"abstract_h1": "", "exploratory_gain": None, "beats_altman_c": [], "beats_logit_c": []}
+    dl = n.get("test_delong")
+    if dl is not None and "p_cluster_holm" in dl:
+        ok = dl[dl["p_cluster_holm"] < 0.05]
+        a = list(ok.loc[ok["versus"] == "altman", "model"])
+        lg = list(ok.loc[ok["versus"] == "logit_hazard", "model"])
+        out["beats_altman_c"], out["beats_logit_c"] = a, lg
+        both = [m for m in a if m in lg]
+        if both:
+            out["abstract_h1"] = f"{_names(both)} beat both benchmarks, also when firms are resampled whole."
+        elif a:
+            out["abstract_h1"] = (f"{_names(a)} beat the Altman score when firms are resampled whole; no model's "
+                                  f"edge over the hazard logit survives that test.")
+        else:
+            out["abstract_h1"] = "Once firms are resampled whole, no model's edge over the benchmarks is significant."
+    x = n.get("test_h2_exploratory")
+    if x and "p_cluster_one_sided" in x.get("all", {}):
+        out["exploratory_gain"] = bool(x["all"]["p_one_sided"] < 0.05 and x["all"]["p_cluster_one_sided"] < 0.05)
+    return out
 
 
 MODEL_NAMES = {"altman": "Altman score", "logit_hazard": "Hazard logit", "cox": "Cox", "xgb_pd12": "XGBoost PD",

@@ -9,13 +9,17 @@ out-of-time test. Distress signals read by language models from material-fact fi
 tested by ablation, with the primary test written down before the test period was opened
 ([PREREGISTRATION.md](PREREGISTRATION.md)).
 
-> **Results under revision (2026-11-23).** A code review found two errors that change
-> published results. The going-concern rule also matched the auditor-responsibility sentence
-> that every audit report carries since 2017, so `gc_flag` is wrong for most filings from then
-> on. The H3 calibration sample kept rows with an unfinished window only when they ended in a
-> filing, which overstated the observed rates. The H3 finding, the exploratory H2 p-value and
-> the credit memos are withdrawn; every number below comes from the run being corrected. The
-> corrected run will be published here with an erratum.
+> **Correction (2026-11-23).** An independent code review after the first publication found
+> errors that changed published results: the going-concern rule also matched the
+> auditor-responsibility paragraph that every audit opinion carries since 2016; the H3 sample
+> kept rows with an open window only when they had ended in a filing; episodes still open in
+> the registry were closed at their last filing; and trailing twelve months were wrong for
+> fiscal years ending in March. Each was fixed with a test and the whole test was run again;
+> hypotheses, models, split and primary test did not change. The fixes are listed in
+> [PREREGISTRATION.md](PREREGISTRATION.md), the paper opens with an erratum, and every number
+> below is from the corrected run. Three first-version conclusions changed: the hazard logit
+> is a much stronger benchmark, the models now overestimate the 36-month rate, and the
+> exploratory signal gain is gone.
 
 The repository also holds the systematic literature review (PRISMA 2020) and the paper.
 
@@ -49,8 +53,13 @@ python -m distress.cli refs                                  # Crossref-verified
 
 Raw CVM and Central Bank files are downloaded into `data/raw/` on first use. Language-model
 answers are cached by a hash of model, prompt and schema, so a rerun makes no calls: unpack
-`cache/llm_answers.jsonl.gz` with `distress.llm.client.unpack_cache` to reproduce every label
-without an API key.
+`cache/llm_answers.jsonl.gz` with `distress.llm.client.unpack_cache` to rerun the signal
+classification and its agreement without an API key. Answers that were not valid JSON are
+cached too, so a rerun takes the same fallback; for the second reader's 18 such requests,
+whose original answers were not kept, the cache holds a placeholder that fails the same way.
+In the shipped copy, names of companies without an event are masked in the memo drafts
+(`python -m distress.cli pack`). `python -m distress.cli guard <files>` scans any published
+file, such as the site pages, before release.
 
 ## Data and events
 
@@ -119,30 +128,32 @@ on Crossref and accepted only when author, year and title matched.
 
 ## Results
 
-Out-of-time test from 2020, 13,245 firm-quarters, 128 followed by a filing within 12 months
+Out-of-time test from 2020, 13,121 firm-quarters, 133 followed by a filing within 12 months
 (`results/test_h1.csv`, `test_delong.csv`, `test_h3.csv`):
 
-| Model | AUC, 12-month PD | 95% interval |
+| Model | AUC, 12-month PD | 95% interval (firms resampled) |
 |:---|---:|---:|
-| XGBoost survival | 0.848 | 0.799 to 0.893 |
-| XGBoost PD | 0.847 | 0.797 to 0.895 |
-| Random survival forest | 0.846 | 0.794 to 0.894 |
-| Cox | 0.804 | 0.740 to 0.861 |
-| DeepSurv | 0.798 | 0.728 to 0.862 |
-| Altman score | 0.777 | 0.712 to 0.834 |
-| DeepHit | 0.763 | 0.689 to 0.838 |
-| Hazard logit | 0.758 | 0.674 to 0.834 |
+| XGBoost survival | 0.859 | 0.808 to 0.908 |
+| Random survival forest | 0.852 | 0.799 to 0.902 |
+| Cox | 0.849 | 0.788 to 0.907 |
+| XGBoost PD | 0.845 | 0.783 to 0.901 |
+| DeepSurv | 0.841 | 0.784 to 0.891 |
+| Hazard logit | 0.816 | 0.741 to 0.885 |
+| Altman score | 0.786 | 0.717 to 0.848 |
+| DeepHit | 0.750 | 0.673 to 0.819 |
 
-- H1: the three tree ensembles beat the Altman score and the hazard logit after Holm's
-  correction; Cox beats the logit only; the neural networks beat neither. The order holds
-  with the narrow event definition and in four of five years of an annual refit.
-- H3: withdrawn. The observed rates came from a sample selected on the outcome; see the
-  note at the top.
-- H2, pre-registered: no gain from the signals (AUC 0.756 with, 0.758 without, p = 0.58).
-  Winsorising at the 99th percentile had turned the five rarest signal counts into zeros; an
-  exploratory rerun that keeps them gives 0.783. It was decided after the test was opened and
-  needs a new test period to count (`results/test_h2_exploratory.json`). Its p-value is
-  withdrawn until the corrected run.
+- H1: with DeLong's test and Holm's correction, Cox and XGBoost survival beat both
+  benchmarks. With a paired bootstrap that resamples firms whole, the three tree ensembles
+  beat the Altman score, but no model's edge over the hazard logit is significant. The
+  ensembles stay ahead of the Altman score with the narrow event definition and, for XGBoost
+  survival, in four of five years of an annual refit.
+- H3: on rows whose window has closed, the observed rates are 1.0% at 12 months, 2.0% at 24
+  and 2.9% at 36. At 36 months most models overestimate; XGBoost survival is closest
+  (2.87%) and XGBoost PD underestimates. Cox has the lowest 36-month Brier score.
+- H2, pre-registered: no gain from the signals (AUC 0.798 with, 0.816 without; one-sided
+  DeLong p = 0.99). Winsorising at the 99th percentile had turned the five rarest signal
+  counts into zeros; an exploratory rerun that keeps them gives 0.818 (p = 0.37; 0.47 with
+  firms resampled), no gain either (`results/test_h2_exploratory.json`).
 
 ## License
 
