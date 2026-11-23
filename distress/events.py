@@ -24,6 +24,8 @@ import pandas as pd
 
 WINDOW_START = pd.Timestamp("2011-01-01")
 EPISODE_GAP = pd.Timedelta(days=365)
+# End date of an episode that has not ended: the registry still shows the status, or a bankruptcy.
+OPEN_END = pd.Timestamp("2099-12-31")
 _SUBJECT = re.compile(r"recuperacao judicial|recuperacao extrajudicial|falencia")
 
 
@@ -105,6 +107,11 @@ def build_events(adjudicated: pd.DataFrame) -> pd.DataFrame:
     any signal) or when it escalates (extrajudicial to judicial or bankruptcy).
     Liquidation is excluded: for non-financial issuers it is usually a voluntary
     dissolution, not a default.
+
+    The registry status is the current one, so the episode that holds it has not
+    ended, however long ago its last filing was, unless an exit was announced after
+    the status began. A bankruptcy never ends. Both run to ``OPEN_END``, and only an
+    escalation opens a new episode after them.
     """
     cols = ["cd_cvm", "name", "event_date", "event_type", "evidence", "link",
             "episode_end", "n_prior_events", "left_truncated"]
@@ -119,35 +126,49 @@ def build_events(adjudicated: pd.DataFrame) -> pd.DataFrame:
             typ = s.event_type if isinstance(s.event_type, str) else None
             if s.status == "exit":
                 if cur is not None:
-                    cur["exited"] = True
+                    cur["exited"], cur["open"] = True, False
                     cur["episode_end"] = max(cur["episode_end"], s.date)
                 continue
             if cur is None:
                 cur = _open(cd, s, typ)
-                continue
-            new = s.status == "filing" and (
-                cur["exited"] or s.date - cur["episode_end"] > EPISODE_GAP
-                or (cur["event_type"], typ) in ESCALATION)
-            if new:
-                rows.append(cur)
-                cur = _open(cd, s, typ)
             else:
-                cur["episode_end"] = max(cur["episode_end"], s.date)
-                cur["event_type"] = cur["event_type"] or typ
+                ongoing = cur["open"] or cur["event_type"] == "FAL"
+                new = s.status == "filing" and (
+                    (cur["event_type"], typ) in ESCALATION
+                    or (not ongoing and (cur["exited"] or s.date - cur["episode_end"] > EPISODE_GAP)))
+                if new:
+                    rows.append(cur)
+                    cur = _open(cd, s, typ)
+                else:
+                    cur["episode_end"] = max(cur["episode_end"], s.date)
+                    cur["event_type"] = cur["event_type"] or typ
+            cur["open"] = cur["open"] or getattr(s, "source", None) == "registry"
         if cur is not None:
             rows.append(cur)
     if not rows:
         return pd.DataFrame(columns=cols)
     ev = pd.DataFrame(rows)
     ev["event_type"] = ev["event_type"].fillna("RJ")
+    ev.loc[ev["open"].astype(bool) | (ev["event_type"] == "FAL"), "episode_end"] = OPEN_END
+    return finalize(ev)[cols].reset_index(drop=True)
+
+
+def finalize(ev: pd.DataFrame) -> pd.DataFrame:
+    """Fields that follow from the dates: an episode ends no earlier than it starts, left truncation
+    (in recovery when the window opens) and the number of earlier events of the firm."""
+    ev = ev.assign(event_date=pd.to_datetime(ev["event_date"]))
+    ev = ev.sort_values(["cd_cvm", "event_date"], kind="stable").reset_index(drop=True)
+    end = pd.to_datetime(ev["episode_end"]) if "episode_end" in ev else pd.Series(pd.NaT, index=ev.index)
+    end = end.fillna(ev["event_date"])
+    ev["episode_end"] = end.where(end >= ev["event_date"], ev["event_date"])
     ev["left_truncated"] = [bool(a < WINDOW_START <= b) for a, b in zip(ev["event_date"], ev["episode_end"])]
     ev["n_prior_events"] = ev.groupby("cd_cvm").cumcount()
-    return ev[cols].reset_index(drop=True)
+    return ev
 
 
 def _open(cd, s, typ) -> dict:
     return {"cd_cvm": cd, "name": s.name, "event_date": s.date, "event_type": typ, "evidence": s.evidence,
-            "link": s.link, "episode_end": s.date, "exited": False}
+            "link": s.link, "episode_end": s.date, "exited": False, "open": False}
 
 
 def non_financial(ev: pd.DataFrame, cad: pd.DataFrame) -> pd.DataFrame:
@@ -221,12 +242,16 @@ def _yes(v) -> bool | None:
     return None
 
 
-def apply_review(draft: pd.DataFrame, sheet: pd.DataFrame) -> pd.DataFrame:
-    """The author's review of the event list applied to the draft.
+def apply_review(draft: pd.DataFrame, sheet: pd.DataFrame, signals: pd.DataFrame | None = None) -> pd.DataFrame:
+    """A review of the event list applied to the draft.
 
     "S" confirms an event; "N" with a corrected date moves it; "N" without a date removes it (not an
     event of the company). Events older than the sheet are kept unchanged. A blank answer stops the
     process: a partly reviewed list does not open the test.
+
+    Removing an event rejects the document that opened its episode, not the episode: with the
+    adjudicated ``signals``, the company's first own filing later in the same episode opens it instead.
+    Episode end, left truncation and the count of earlier events are recomputed after every change.
     """
     ans = sheet["confere (S/N)"].map(_yes)
     if ans.isna().any():
@@ -252,4 +277,24 @@ def apply_review(draft: pd.DataFrame, sheet: pd.DataFrame) -> pd.DataFrame:
             out.at[i, "review"] = "date_corrected"
         else:
             drop.append(i)
-    return out.drop(index=drop).sort_values(["cd_cvm", "event_date"]).reset_index(drop=True)
+    rebuilt = [] if signals is None else [r for r in (_later_filing(out.loc[i], signals) for i in drop) if r is not None]
+    kept = pd.concat([out.drop(index=drop), pd.DataFrame(rebuilt)], ignore_index=True) if rebuilt else out.drop(index=drop)
+    return finalize(kept)[list(out.columns)]
+
+
+def _later_filing(ev: pd.Series, signals: pd.DataFrame) -> dict | None:
+    """The company's first own filing after a rejected opener, inside the same episode."""
+    start = pd.Timestamp(ev["event_date"])
+    end = pd.to_datetime(ev["episode_end"])
+    end = start if pd.isna(end) else end
+    own = signals["own_filing"].astype(str).str.lower().eq("true")
+    when = pd.to_datetime(signals["date"])
+    s = signals[(signals["cd_cvm"] == ev["cd_cvm"]) & own & (signals["status"] == "filing")
+                & (when > start) & (when <= end) & (signals["event_type"] != "LIQ")]
+    if s.empty:
+        return None
+    s = s.assign(_d=pd.to_datetime(s["date"])).sort_values("_d", kind="stable").iloc[0]
+    typ = s["event_type"] if isinstance(s["event_type"], str) else ev["event_type"]
+    return {**ev.to_dict(), "event_date": s["_d"], "event_type": typ, "evidence": s["evidence"], "link": s["link"],
+            "review": "rebuilt_after_drop",
+            "review_note": f"documento de {start:%d/%m/%Y} rejeitado; episódio aberto pelo pedido seguinte da empresa"}

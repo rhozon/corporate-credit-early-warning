@@ -32,11 +32,14 @@ def llm(which=PRIMARY, max_tokens=300) -> LLM:
 
 def cmd_events(a):
     cad = cvm.read_cad()
-    ipe = cvm.read_ipe(IPE_YEARS)
-    cands = events.candidate_events(cad, ipe)
-    print("candidates by source:", cands["source"].value_counts().to_dict())
-    adj = events.adjudicate(cands, event_classifier(llm(EVENTS_MODEL)))
-    adj.to_csv(DATA / "events_adjudicated.csv", index=False)
+    if getattr(a, "reuse", False) and (DATA / "events_adjudicated.csv").exists():
+        adj = _adjudicated()          # episodes rebuilt from the signals already adjudicated, no model call
+    else:
+        ipe = cvm.read_ipe(IPE_YEARS)
+        cands = events.candidate_events(cad, ipe)
+        print("candidates by source:", cands["source"].value_counts().to_dict())
+        adj = events.adjudicate(cands, event_classifier(llm(EVENTS_MODEL)))
+        adj.to_csv(DATA / "events_adjudicated.csv", index=False)
     ev = events.build_events(adj)
     ev = events.non_financial(ev, cad)
     ev.to_csv(DATA / "events_draft.csv", index=False)
@@ -344,10 +347,14 @@ def cmd_validate(a):
     print(res[cols].round(3).to_string(index=False))
 
 
+def _adjudicated() -> pd.DataFrame:
+    return pd.read_csv(DATA / "events_adjudicated.csv", parse_dates=["date"])
+
+
 def cmd_apply_review(a):
     """Answers given by hand in the review sheet, applied to the draft event list."""
     draft = pd.read_csv(DATA / "events_draft.csv", parse_dates=["event_date", "episode_end"])
-    reviewed = events.apply_review(draft, events.read_review(a.sheet))
+    reviewed = events.apply_review(draft, events.read_review(a.sheet), _adjudicated())
     reviewed.to_csv(DATA / "events_reviewed.csv", index=False)
     print(reviewed["review"].value_counts().to_dict(), "| removed:", len(draft) - len(reviewed))
 
@@ -358,7 +365,7 @@ def cmd_second_review(a):
 
     draft = pd.read_csv(DATA / "events_draft.csv", parse_dates=["event_date", "episode_end"])
     second = pd.read_csv(DATA / "events_second_reader.csv")
-    reviewed = events.apply_review(draft, review_aid.rule_sheet(draft, second))
+    reviewed = events.apply_review(draft, review_aid.rule_sheet(draft, second), _adjudicated())
     reviewed.to_csv(DATA / "events_reviewed.csv", index=False)
     print(reviewed["review"].value_counts().to_dict(), "| removed:", len(draft) - len(reviewed),
           "| draft kept where the second reader was unsure:", int(reviewed["review_note"].str.startswith(
@@ -545,6 +552,7 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
     e = sub.add_parser("events")
     e.add_argument("--sheet", default=None)
+    e.add_argument("--reuse", action="store_true", help="rebuild episodes from data/events_adjudicated.csv")
     e.set_defaults(fn=cmd_events)
     pn = sub.add_parser("panel")
     pn.add_argument("--end", default="2026-09-30")

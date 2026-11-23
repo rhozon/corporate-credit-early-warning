@@ -124,6 +124,28 @@ def test_extrajudicial_turning_judicial_is_a_new_event():
     assert ev["event_type"].tolist() == ["RE", "RJ"]
 
 
+def test_current_registry_status_keeps_the_episode_open():
+    # In recovery since 2010 by the registry, monthly reports stop in 2010: still in recovery, so left-truncated.
+    cad = pd.DataFrame([cad_row(6, "EM RECUPERAÇÃO JUDICIAL OU EQUIVALENTE", "2010-01-01")])
+    ipe = pd.DataFrame([ipe_row(6, RJ_CAT, "", d) for d in ("2010-03-01", "2010-06-01")])
+    ev = events.build_events(events.adjudicate(events.candidate_events(cad, ipe), own_filing_classifier))
+    assert ev["left_truncated"].tolist() == [True]
+    assert ev["episode_end"].iloc[0] >= events.OPEN_END
+
+
+def test_bankruptcy_is_absorbing():
+    def classifier(row):
+        if "falência" in row["evidence"].lower():
+            return {"own_filing": True, "event_type": "FAL", "status": "filing"}
+        return status_classifier(row)
+
+    rows = [ipe_row(9, "Fato Relevante", "Decretação de falência", "2018-05-02"),
+            ipe_row(9, "Fato Relevante", "Pedido de Recuperação Judicial", "2021-03-01")]
+    ev = events.build_events(events.adjudicate(events.candidate_events(pd.DataFrame([cad_row(9)]),
+                                                                       pd.DataFrame(rows)), classifier))
+    assert ev["event_type"].tolist() == ["FAL"] and ev["episode_end"].iloc[0] >= events.OPEN_END
+
+
 def test_liquidation_is_not_a_default_event():
     ev = run([], [cad_row(9, "LIQUIDAÇÃO EXTRAJUDICIAL", "2024-12-03")])
     assert ev.empty
@@ -168,6 +190,44 @@ def test_review_confirms_corrects_and_drops_events():
     assert out.loc[4, "event_date"] == pd.Timestamp("2023-01-12") and out.loc[4, "review"] == "date_corrected"
     assert out.loc[2, "review"] == "confirmed" and out.loc[1, "review"] == "not_in_sheet"
     assert out.loc[4, "review_note"] == "data do pedido"
+
+
+def test_review_drop_keeps_a_later_own_filing_of_the_same_episode():
+    from distress.events import apply_review
+
+    # The episode opened with a creditor's bankruptcy request, which the review rejects; the company's own
+    # judicial-recovery filing three years later, inside the same episode, must survive as an event.
+    draft = pd.DataFrame({"cd_cvm": [7], "name": ["G"], "event_date": pd.to_datetime(["2019-03-01"]),
+                          "event_type": ["FAL"], "evidence": "x", "link": "y",
+                          "episode_end": pd.to_datetime(["2022-09-01"]), "n_prior_events": 0, "left_truncated": False})
+    sheet = pd.DataFrame({"código CVM": [7], "empresa": ["G"], "data": ["2019-03-01"], "tipo": ["FAL"],
+                          "confere (S/N)": ["N"], "data correta": [""], "observação": ["pedido de credor"]})
+    signals = pd.DataFrame({"cd_cvm": 7, "name": "G", "source": ["material_fact", "material_fact", "registry"],
+                            "date": pd.to_datetime(["2019-03-01", "2022-05-10", "2022-05-12"]),
+                            "evidence": ["Pedido de falência por credor", "Pedido de recuperação judicial",
+                                         "EM RECUPERAÇÃO JUDICIAL"], "link": "z",
+                            "event_type": ["FAL", "RJ", "RJ"], "own_filing": True, "status": "filing"})
+    out = apply_review(draft, sheet, signals)
+    assert out["event_date"].tolist() == [pd.Timestamp("2022-05-10")]
+    assert out["event_type"].tolist() == ["RJ"] and out["review"].tolist() == ["rebuilt_after_drop"]
+
+
+def test_review_recomputes_episode_fields():
+    from distress.events import apply_review
+
+    # Firm 1: the 2010 event moves into 2011, so it is no longer left-truncated. Firm 2: its first event is
+    # dropped, so the second is now its first.
+    draft = pd.DataFrame({"cd_cvm": [1, 2, 2], "name": "A",
+                          "event_date": pd.to_datetime(["2010-12-01", "2015-01-10", "2019-04-01"]),
+                          "event_type": "RJ", "evidence": "x", "link": "y",
+                          "episode_end": pd.to_datetime(["2011-03-01", "2015-06-01", "2019-09-01"]),
+                          "n_prior_events": [0, 0, 1], "left_truncated": [True, False, False]})
+    sheet = pd.DataFrame({"código CVM": [1, 2, 2], "empresa": "A", "data": ["2010-12-01", "2015-01-10", "2019-04-01"],
+                          "tipo": "RJ", "confere (S/N)": ["N", "N", "S"], "data correta": ["01/02/2011", "", ""],
+                          "observação": ""})
+    out = apply_review(draft, sheet).set_index(["cd_cvm", "event_date"])
+    assert not out.loc[(1, pd.Timestamp("2011-02-01")), "left_truncated"]
+    assert out.loc[(2, pd.Timestamp("2019-04-01")), "n_prior_events"] == 0
 
 
 def test_review_with_blank_answers_is_refused():
