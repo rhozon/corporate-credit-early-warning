@@ -81,6 +81,21 @@ def test_trailing_twelve_months_from_year_to_date():
     assert np.isnan(q["rev_ttm_prev"])  # 2018 annual not available, so no growth
 
 
+def test_trailing_twelve_months_with_a_fiscal_year_ending_in_march():
+    # Fiscal year April to March: the March filing is the annual one, December holds nine months.
+    def f(per, receb, rev, start):
+        return pd.DataFrame(rows(20, per, receb, {**STOCKS, "3.01": rev, "3.05": 1, "3.06.02": -1, "3.11": 1},
+                                 ytd_start=start))
+    st = pd.concat([f("2022-12-31", "2023-02-10", 600, "2022-04-01"),
+                    f("2023-03-31", "2023-06-20", 820, "2022-04-01"),
+                    f("2023-12-31", "2024-02-10", 660, "2023-04-01"),
+                    f("2024-03-31", "2024-06-20", 900, "2023-04-01")])
+    pit = features.point_in_time(st).set_index("as_of")
+    assert pit.loc[pd.Timestamp("2024-02-10"), "rev_ttm"] == 880   # 660 + 820 - 600
+    assert pit.loc[pd.Timestamp("2024-06-20"), "rev_ttm"] == 900   # the annual filing itself
+    assert pit.loc[pd.Timestamp("2024-06-20"), "rev_ttm_prev"] == 820
+
+
 def test_going_concern_rule_separates_doubt_from_boilerplate():
     p = pd.DataFrame({"cd_cvm": [1, 2], "dt_refer": ["2024-03-31"] * 2, "dt_receb": pd.to_datetime(["2024-05-10"] * 2),
                       "kind": ["Relatório da Revisão Especial"] * 2,

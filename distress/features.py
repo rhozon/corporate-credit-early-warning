@@ -36,6 +36,18 @@ def _ytd_only(st: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([st[~flows], f[f["dt_ini"] == first]])
 
 
+def _fiscal_year_end(st: pd.DataFrame) -> dict:
+    """Month in which each firm's fiscal year ends, from the start date of its year-to-date flows."""
+    if "dt_ini" not in st:
+        return {}
+    f = st.loc[st["code"].str.startswith("3") & st["dt_ini"].notna(), ["cd_cvm", "dt_ini"]].reset_index(drop=True)
+    f = f.assign(m=pd.to_datetime(f["dt_ini"], errors="coerce").dt.month).dropna(subset=["m"])
+    if f.empty:
+        return {}
+    mode = f.groupby("cd_cvm")["m"].agg(lambda m: m.value_counts().idxmax())
+    return {cd: (int(m) - 2) % 12 + 1 for cd, m in mode.items()}
+
+
 def point_in_time(stmts: pd.DataFrame) -> pd.DataFrame:
     st = stmts.copy()
     st["dt_refer"] = pd.to_datetime(st["dt_refer"])
@@ -46,9 +58,11 @@ def point_in_time(stmts: pd.DataFrame) -> pd.DataFrame:
     for cd, per, code, receb, v in st[["cd_cvm", "dt_refer", "code", "dt_receb", "value"]].itertuples(index=False):
         vals[(cd, per, code)].append((receb, v))
     filings = st.drop_duplicates(["cd_cvm", "dt_refer", "version"])[["cd_cvm", "dt_refer", "version", "dt_receb"]]
+    fy_end = _fiscal_year_end(st)
 
     rows = []
     for cd, fl in filings.groupby("cd_cvm"):
+        fe = fy_end.get(cd, 12)
         first_filed = fl.groupby("dt_refer")["dt_receb"].min()
         restatements = fl.loc[fl["version"] > 1, "dt_receb"].sort_values().tolist()
         for t in sorted(fl["dt_receb"].unique()):
@@ -67,10 +81,13 @@ def point_in_time(stmts: pd.DataFrame) -> pd.DataFrame:
                 return float(sum(xs)) if xs else np.nan
 
             def ttm(per, code):
+                # Year to date plus the last annual figure minus the same period a year earlier. The fiscal
+                # year may end in a month other than December (sugar and ethanol firms close in March).
                 ytd = get(per, code)
-                if per.month == 12:
+                if per.month == fe:
                     return ytd
-                prev_annual = get(pd.Timestamp(per.year - 1, 12, 31), code)
+                year = per.year if per.month > fe else per.year - 1
+                prev_annual = get(pd.Timestamp(year, fe, 1) + pd.offsets.MonthEnd(0), code)
                 prev_ytd = get(per - pd.DateOffset(years=1) + pd.offsets.MonthEnd(0), code)
                 return ytd + prev_annual - prev_ytd
 

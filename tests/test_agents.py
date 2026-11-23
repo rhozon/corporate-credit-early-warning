@@ -35,6 +35,18 @@ def tools():
     return Tools(panel=panel, docs=docs, pd_fn=pd_fn, drivers_fn=drivers_fn, name="EMPRESA X")
 
 
+def test_the_memo_dates_figures_by_the_statement_and_names_them_for_what_they_are():
+    from distress.agents.tools import FEATURE_LABELS, RATIO_FIELDS
+
+    panel = pd.DataFrame({"cd_cvm": [7], "q": pd.to_datetime(["2024-12-31"]), "dt_refer": pd.to_datetime(["2024-09-30"]),
+                          "lev": [0.8]})
+    t = Tools(panel=panel, docs=pd.DataFrame(columns=["cd_cvm", "delivered", "subject"]), pd_fn=None, drivers_fn=None,
+              name="X")
+    assert t.panel_row(7, pd.Timestamp("2025-01-15"))["data_base"] == "30/09/2024"   # Sep statements, not the quarter
+    assert "ativo" in FEATURE_LABELS["log_size_real"]                              # size is total assets
+    assert "ressalva" not in RATIO_FIELDS["gc_flag"]                               # an uncertainty, not a qualification
+
+
 def test_disclosures_never_come_from_after_the_as_of_date(tools):
     d = tools.recent_disclosures(7, pd.Timestamp("2022-04-01"))
     assert [x["subject"] for x in d] == ["Waiver de covenants", "Reperfilamento de dívidas"]

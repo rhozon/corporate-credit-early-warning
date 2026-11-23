@@ -12,13 +12,14 @@ import pandas as pd
 
 RATIO_FIELDS = {"lev": "alavancagem (passivo/ativo)", "curr": "liquidez corrente", "int_cov": "cobertura de juros",
                 "cash_ta": "caixa/ativo", "margin": "margem líquida", "z2": "escore Z'' de Altman",
-                "loss_q4": "trimestres com prejuízo em 12 meses (de 4)", "gc_flag": "ressalva de continuidade"}
+                "loss_q4": "trimestres, entre os 4 últimos, com resultado de 12 meses negativo",
+                "gc_flag": "incerteza sobre continuidade operacional no relatório do auditor"}
 MACRO_FIELDS = {"selic": "Selic (% a.a.)", "ipca12": "IPCA 12 meses (%)", "ibc_yoy": "IBC-Br, variação anual (%)",
                 "pj_default": "inadimplência PJ (%)", "spread": "spread médio (p.p.)"}
 # Every predictor in words, for naming the drivers of a PD.
 FEATURE_LABELS = {**RATIO_FIELDS, **MACRO_FIELDS, "wc_ta": "capital de giro/ativo", "re_ta": "lucros retidos/ativo",
                   "ebit_ta": "EBIT/ativo", "eq_tl": "patrimônio/passivo", "sales_g": "crescimento da receita",
-                  "log_size_real": "tamanho (receita real, em log)", "neg_eq": "patrimônio líquido negativo",
+                  "log_size_real": "tamanho (ativo total real, em log)", "neg_eq": "patrimônio líquido negativo",
                   "filing_delay_days": "atraso na entrega das demonstrações",
                   "n_restatements_4q": "reapresentações de demonstrações em 4 trimestres",
                   "info_age_days": "idade da última demonstração", "prior_event": "recuperação anterior",
@@ -45,7 +46,8 @@ class Tools:
 
     def panel_row(self, cd, as_of) -> dict:
         r = self._row(cd, as_of).iloc[0]
-        out = {"data_base": _fmt_date(r["q"])}
+        # The date of the statements behind the figures, not the panel quarter they were last known in.
+        out = {"data_base": _fmt_date(r["dt_refer"] if "dt_refer" in r and pd.notna(r["dt_refer"]) else r["q"])}
         out.update({v: round(float(r[k]), 2) for k, v in RATIO_FIELDS.items() if k in r and pd.notna(r[k])})
         return out
 
