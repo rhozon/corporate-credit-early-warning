@@ -4,17 +4,17 @@ Data da análise: 21/10/2024. Evento posterior: pedido de recuperação judicial
 
 **Parecer de Crédito: AMBIPAR PARTICIPAÇÕES E EMPREENDIMENTOS S.A.**
 
-A situação financeira da companhia, com data-base em 30/09/2024, apresenta alavancagem (passivo/ativo) de 0,81 e liquidez corrente de 3,31. O caixa/ativo é de 0,25, enquanto a cobertura de juros está em 0,72 e a margem líquida em -0,03. O escore Z'' de Altman é de 5,94.
+Em 30/06/2024, a empresa apresentava alavancagem (passivo/ativo) de 0,81 e liquidez corrente de 3,31. O caixa/ativo era de 0,25, enquanto a cobertura de juros situou-se em 0,72 e a margem líquida em -0,03. O escore Z'' de Altman foi de 5,94.
 
-A probabilidade de default é de 0,7% para PD 12 meses, 1,4% para PD 24 meses e 2,1% para PD 36 meses.
+A probabilidade de default é de 0,9% para 12 meses, 1,7% para 24 meses e 2,6% para 36 meses. Não há incerteza sobre continuidade operacional no relatório do auditor.
 
-Os principais fatores de risco identificados são trimestres com prejuízo em 12 meses (de 4), que registrou 3,0, além do tamanho (receita real, em log) e desemprego.
+Os principais fatores de risco incluem trimestres, entre os 4 últimos, com resultado de 12 meses negativo, sendo este valor de 3,0, além do tamanho (ativo total real, em log) e desemprego.
 
-Em divulgações recentes, destacam-se a certificação de Ações Verdes pela B3 e Standard & Poor's em 30/09/2024 e a desmobilização de ativos e operações de renovação da frota em 15/08/2024. Houve também alterações na diretoria em 23/07/2024 e atualização de projeção financeira em 03/06/2024.
+Divulgações recentes incluem a certificação de Ações Verdes pela B3 e Standard & Poor's em 30/09/2024, desmobilização de ativos e renovação da frota em 15/08/2024, e alterações na diretoria em 23/07/2024.
 
 O contexto macroeconômico apresenta Selic de 10,6% a.a., IPCA 12 meses de 4,24%, variação anual do IBC-Br de 5,84%, inadimplência PJ de 2,52% e spread médio de 18,53 p.p.
 
-Recomenda-se o monitoramento contínuo dos indicadores de rentabilidade e da evolução da alavancagem.
+Recomenda-se monitoramento da evolução dos indicadores financeiros e dos fatores de risco identificados.
 
 ## Fatos das ferramentas
 
@@ -23,24 +23,24 @@ Recomenda-se o monitoramento contínuo dos indicadores de rentabilidade e da evo
  "empresa": "AMBIPAR PARTICIPAÇÕES E EMPREENDIMENTOS S.A.",
  "data_da_analise": "21/10/2024",
  "indicadores": {
-  "data_base": "30/09/2024",
+  "data_base": "30/06/2024",
   "alavancagem (passivo/ativo)": 0.81,
   "liquidez corrente": 3.31,
   "cobertura de juros": 0.72,
   "caixa/ativo": 0.25,
   "margem líquida": -0.03,
   "escore Z'' de Altman": 5.94,
-  "trimestres com prejuízo em 12 meses (de 4)": 3.0,
-  "ressalva de continuidade": 0.0
+  "trimestres, entre os 4 últimos, com resultado de 12 meses negativo": 3.0,
+  "incerteza sobre continuidade operacional no relatório do auditor": 0.0
  },
  "probabilidade_de_default": {
-  "pd12": 0.007,
-  "pd24": 0.014,
-  "pd36": 0.021
+  "pd12": 0.009,
+  "pd24": 0.017,
+  "pd36": 0.026
  },
  "fatores_de_risco": [
-  "trimestres com prejuízo em 12 meses (de 4)",
-  "tamanho (receita real, em log)",
+  "trimestres, entre os 4 últimos, com resultado de 12 meses negativo",
+  "tamanho (ativo total real, em log)",
   "desemprego"
  ],
  "macro": {

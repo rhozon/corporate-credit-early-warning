@@ -4,17 +4,17 @@ Data da análise: 19/01/2022. Evento posterior: pedido de recuperação judicial
 
 **Parecer de Crédito: AMERICANAS S.A.**
 
-A situação financeira da companhia, com data-base em 31/12/2021, apresenta alavancagem (passivo/ativo) de 0.64 e liquidez corrente de 1.7. A cobertura de juros é de 0.43, com margem líquida de 0.0 e caixa/ativo de 0.1. O escore Z'' de Altman é de 5.55, sem ressalva de continuidade.
+A situação financeira da companhia, com base em 30/09/2021, apresenta alavancagem (passivo/ativo) de 0.64, liquidez corrente de 1.7 e cobertura de juros de 0.43. O caixa/ativo é de 0.1 e a margem líquida é de 0.0, com escore Z'' de Altman de 5.55.
 
-A probabilidade de default é de 0.8% para PD 12 meses, 1.6% para PD 24 meses e 2.4% para PD 36 meses.
+A probabilidade de default é de 0.7% para PD 12 meses, 1.5% para PD 24 meses e 2.2% para PD 36 meses.
 
-Os principais fatores de risco identificados são os trimestres com prejuízo em 12 meses (de 4), que totalizam 3.0, o tamanho (receita real, em log) e a inadimplência PJ (%), que é de 1.43%.
+Os principais fatores de risco identificados são: trimestres, entre os 4 últimos, com resultado de 12 meses negativo (registrando 3.0), tamanho (ativo total real, em log) e inadimplência PJ (%) de 1.43.
 
 As divulgações recentes incluem processos de reorganização societária em 03/11/2021, a conclusão da aquisição do Hortifruti Natural da Terra em 01/11/2021 e a divulgação de projeções de sinergias em 12/08/2021.
 
 No contexto macroeconômico, observa-se Selic de 8.86% a.a., IPCA 12 meses de 10.74%, variação anual do IBC-Br de -1.34% e spread médio de 15.03 p.p.
 
-Recomenda-se o monitoramento contínuo dos indicadores de rentabilidade e do cenário macroeconômico.
+Recomenda-se o monitoramento contínuo dos indicadores de rentabilidade e do cenário macroeconômico para acompanhar a evolução do risco de crédito.
 
 ## Fatos das ferramentas
 
@@ -23,24 +23,24 @@ Recomenda-se o monitoramento contínuo dos indicadores de rentabilidade e do cen
  "empresa": "AMERICANAS S.A.",
  "data_da_analise": "19/01/2022",
  "indicadores": {
-  "data_base": "31/12/2021",
+  "data_base": "30/09/2021",
   "alavancagem (passivo/ativo)": 0.64,
   "liquidez corrente": 1.7,
   "cobertura de juros": 0.43,
   "caixa/ativo": 0.1,
   "margem líquida": 0.0,
   "escore Z'' de Altman": 5.55,
-  "trimestres com prejuízo em 12 meses (de 4)": 3.0,
-  "ressalva de continuidade": 0.0
+  "trimestres, entre os 4 últimos, com resultado de 12 meses negativo": 3.0,
+  "incerteza sobre continuidade operacional no relatório do auditor": 0.0
  },
  "probabilidade_de_default": {
-  "pd12": 0.008,
-  "pd24": 0.016,
-  "pd36": 0.024
+  "pd12": 0.007,
+  "pd24": 0.015,
+  "pd36": 0.022
  },
  "fatores_de_risco": [
-  "trimestres com prejuízo em 12 meses (de 4)",
-  "tamanho (receita real, em log)",
+  "trimestres, entre os 4 últimos, com resultado de 12 meses negativo",
+  "tamanho (ativo total real, em log)",
   "inadimplência PJ (%)"
  ],
  "macro": {

@@ -4,17 +4,17 @@ Data da análise: 11/03/2025. Evento posterior: recuperação extrajudicial em 1
 
 **Parecer de Crédito: RAÍZEN S.A.**
 
-A situação financeira da RAÍZEN S.A., com base na data-base de 31/12/2024, apresenta alavancagem (passivo/ativo) de 0.84 e liquidez corrente de 1.16. A cobertura de juros é de 0.94, com margem líquida de 0.01 e caixa/ativo de 0.07. O escore Z'' de Altman é de 4.24, registrando 1.0 trimestre com prejuízo em 12 meses (de 4) e ressalva de continuidade de 0.0.
+A situação financeira da RAÍZEN S.A., com base na data-base de 30/09/2024, apresenta alavancagem (passivo/ativo) de 0,84 e liquidez corrente de 1,16. A cobertura de juros é de 0,87, com margem líquida de 0,0 e caixa/ativo de 0,07. O escore Z'' de Altman é de 4,3, com 0,0 trimestres, entre os 4 últimos, com resultado de 12 meses negativo e 0,0 de incerteza sobre continuidade operacional no relatório do auditor.
 
-A probabilidade de default é de 0.6% para PD 12 meses, 1.2% para PD 24 meses e 1.8% para PD 36 meses.
+A probabilidade de default é de 0,4% para PD 12 meses, 0,9% para PD 24 meses e 1,3% para PD 36 meses.
 
-Os principais fatores de risco identificados são o tamanho (receita real, em log), o caixa/ativo de 0.07 e as reapresentações de demonstrações em 4 trimestres.
+Os principais fatores de risco identificados são o tamanho (ativo total real, em log), desemprego e caixa/ativo.
 
 Em divulgações recentes, destaca-se a Prévia Operacional do 3º Trimestre do Ano-Safra 2024'25 e a descontinuação da divulgação das projeções (Guidance) em 17/01/2025. Em 21/10/2024, houve alteração da composição da Diretoria Executiva.
 
-O contexto macroeconômico apresenta Selic de 11.9% a.a., IPCA 12 meses de 4.87% e variação anual do IBC-Br de 7.1%. A inadimplência PJ é de 2.52% e o spread médio é de 18.28 p.p.
+O contexto macroeconômico apresenta Selic de 11,9% a.a., IPCA 12 meses de 4,87%, variação anual do IBC-Br de 7,1%, inadimplência PJ de 2,52% e spread médio de 18,28 p.p.
 
-Recomenda-se o monitoramento da companhia, considerando a descontinuação do guidance e os indicadores de cobertura de juros e caixa/ativo.
+Recomenda-se o monitoramento da companhia, especialmente quanto à descontinuação do guidance e aos indicadores de cobertura e liquidez.
 
 ## Fatos das ferramentas
 
@@ -23,25 +23,25 @@ Recomenda-se o monitoramento da companhia, considerando a descontinuação do gu
  "empresa": "RAÍZEN S.A.",
  "data_da_analise": "11/03/2025",
  "indicadores": {
-  "data_base": "31/12/2024",
+  "data_base": "30/09/2024",
   "alavancagem (passivo/ativo)": 0.84,
   "liquidez corrente": 1.16,
-  "cobertura de juros": 0.94,
+  "cobertura de juros": 0.87,
   "caixa/ativo": 0.07,
-  "margem líquida": 0.01,
-  "escore Z'' de Altman": 4.24,
-  "trimestres com prejuízo em 12 meses (de 4)": 1.0,
-  "ressalva de continuidade": 0.0
+  "margem líquida": 0.0,
+  "escore Z'' de Altman": 4.3,
+  "trimestres, entre os 4 últimos, com resultado de 12 meses negativo": 0.0,
+  "incerteza sobre continuidade operacional no relatório do auditor": 0.0
  },
  "probabilidade_de_default": {
-  "pd12": 0.006,
-  "pd24": 0.012,
-  "pd36": 0.018
+  "pd12": 0.004,
+  "pd24": 0.009,
+  "pd36": 0.013
  },
  "fatores_de_risco": [
-  "tamanho (receita real, em log)",
-  "caixa/ativo",
-  "reapresentações de demonstrações em 4 trimestres"
+  "tamanho (ativo total real, em log)",
+  "desemprego",
+  "caixa/ativo"
  ],
  "macro": {
   "Selic (% a.a.)": 11.9,
