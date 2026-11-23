@@ -70,7 +70,13 @@ def reliable_signals(kappa: dict, threshold: float = 0.6) -> list[str]:
     return [f"sig_{c}_12m" for c in FEATURE_CATEGORIES if (kappa.get(c) or 0) >= threshold]
 
 
-def ablation_table(base: pd.DataFrame, signals: pd.DataFrame) -> pd.DataFrame:
+def _clustered(y, p1, p2, firms, B: int, seed: int) -> dict:
+    """The firm-clustered paired test, reported beside DeLong (rows of one firm are not independent)."""
+    c = stats.cluster_paired_auc_test(y, p1, p2, firms, B=B, seed=seed)
+    return {"p_cluster": c["p_one_sided"], "diff_lo": c["lo"], "diff_hi": c["hi"]}
+
+
+def ablation_table(base: pd.DataFrame, signals: pd.DataFrame, B: int = 1000, seed: int = 2026) -> pd.DataFrame:
     """Each model with and without the signals (one-sided DeLong, signals better). The primary model's
     row is the pre-registered test; Holm's correction covers the other, secondary, rows."""
     rows = []
@@ -80,19 +86,22 @@ def ablation_table(base: pd.DataFrame, signals: pd.DataFrame) -> pd.DataFrame:
         rows.append({"model": m, "role": "primary" if m == PRIMARY_MODEL else "secondary",
                      "auc_base": evaluate.metrics(g["y12"].values, g["pd12"].values)["auc"],
                      "auc_signals": evaluate.metrics(s["y12"].values, s["pd12"].values)["auc"],
-                     "auc_diff": diff, "z": z, "p": p})
+                     "auc_diff": diff, "z": z, "p": p,
+                     **_clustered(g["y12"].values, s["pd12"].values, g["pd12"].values, g["cd_cvm"].values, B, seed)})
     out = pd.DataFrame(rows)
     sec = out["role"] == "secondary"
-    out["p_holm"] = np.nan
+    out["p_holm"], out["p_cluster_holm"] = np.nan, np.nan
     if sec.any():
         out.loc[sec, "p_holm"] = stats.holm(out.loc[sec, "p"])
+        out.loc[sec, "p_cluster_holm"] = stats.holm(out.loc[sec, "p_cluster"])
     return out
 
 
-def delong_table(preds: pd.DataFrame, references=REFERENCES) -> pd.DataFrame:
+def delong_table(preds: pd.DataFrame, references=REFERENCES, B: int = 1000, seed: int = 2026) -> pd.DataFrame:
     """Each model against each reference on the 12-month PD (one-sided: model better), Holm-adjusted.
 
-    These are the secondary comparisons of H1; the rows of every model are the same test rows.
+    These are the secondary comparisons of H1; the rows of every model are the same test rows. DeLong
+    treats rows as independent; the firm-clustered paired test beside it does not.
     """
     ok = preds[preds["complete"]]
     by = {m: g for m, g in ok.groupby("model", sort=False)}
@@ -104,17 +113,22 @@ def delong_table(preds: pd.DataFrame, references=REFERENCES) -> pd.DataFrame:
             if ref not in by:
                 continue
             diff, z, p = stats.delong(g["y12"].values, g["pd12"].values, by[ref]["pd12"].values)
-            rows.append({"model": m, "versus": ref, "auc_diff": diff, "z": z, "p": p})
+            rows.append({"model": m, "versus": ref, "auc_diff": diff, "z": z, "p": p,
+                         **_clustered(g["y12"].values, g["pd12"].values, by[ref]["pd12"].values,
+                                      g["cd_cvm"].values, B, seed)})
     out = pd.DataFrame(rows)
     if len(out):
         out["p_holm"] = stats.holm(out["p"])
+        out["p_cluster_holm"] = stats.holm(out["p_cluster"])
     return out
 
 
 def h2_test(train: pd.DataFrame, test: pd.DataFrame, base: list[str], signals: list[str], fit_end: pd.Timestamp,
-            eval_end: pd.Timestamp, model: str = "logit_hazard", seed: int = 2026, keep_tails=()) -> dict:
+            eval_end: pd.Timestamp, model: str = "logit_hazard", seed: int = 2026, keep_tails=(),
+            B: int = 1000) -> dict:
     """Pre-registered primary test of H2: the discrete-time hazard logit with and without the language-model
-    signals, AUC of the 12-month PD on the out-of-time rows, one-sided DeLong test (signals better)."""
+    signals, AUC of the 12-month PD on the out-of-time rows, one-sided DeLong test (signals better).
+    The firm-clustered paired test is reported beside it."""
     complete = (pd.to_datetime(test["q"]) + pd.DateOffset(months=12) <= eval_end).values
     y = test["y12"].values[complete]
     pds = {}
@@ -122,10 +136,13 @@ def h2_test(train: pd.DataFrame, test: pd.DataFrame, base: list[str], signals: l
         m = MODELS[model](features=feats, seed=seed, fast=False, keep_tails=keep_tails).fit(train, horizon_end=fit_end)
         pds[arm] = m.pd(test)["pd12"].values[complete]
     diff, z, p = stats.delong(y, pds["signals"], pds["base"])
+    c = _clustered(y, pds["signals"], pds["base"], test["cd_cvm"].values[complete], B, seed)
     return {"model": model, "n": int(complete.sum()), "events": int(y.sum()),
             "auc_base": evaluate.metrics(y, pds["base"])["auc"],
             "auc_signals": evaluate.metrics(y, pds["signals"])["auc"],
-            "auc_diff": diff, "z": z, "p_one_sided": p, "signals": list(signals), "keep_tails": list(keep_tails)}
+            "auc_diff": diff, "z": z, "p_one_sided": p, "p_cluster_one_sided": c["p_cluster"],
+            "diff_lo": c["diff_lo"], "diff_hi": c["diff_hi"],
+            "signals": list(signals), "keep_tails": list(keep_tails)}
 
 
 def calibration_by_horizon(preds: pd.DataFrame, eval_end: pd.Timestamp, horizons=(12, 24, 36)) -> pd.DataFrame:

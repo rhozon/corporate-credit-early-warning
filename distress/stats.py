@@ -33,6 +33,37 @@ def delong(y, p1, p2) -> tuple[float, float, float]:
     return float(a1 - a2), float(z), float(1 - norm.cdf(z))
 
 
+def _auc(y: np.ndarray, p: np.ndarray) -> float:
+    pos = y == 1
+    m, n = pos.sum(), (~pos).sum()
+    if m == 0 or n == 0:
+        return np.nan
+    return float((rankdata(p)[pos].sum() - m * (m + 1) / 2) / (m * n))
+
+
+def cluster_paired_auc_test(y, p1, p2, groups, B: int = 1000, seed: int = 2026, level: float = 0.95) -> dict:
+    """AUC(p1) - AUC(p2) with firms resampled whole, both models on the same resample.
+
+    DeLong treats rows as independent; a firm's quarters are not, so a gain concentrated in a few firms
+    looks stronger to it than it is. The one-sided p-value is the share of resamples where the
+    difference is not positive, with the usual +1 correction."""
+    y, p1, p2, groups = np.asarray(y), np.asarray(p1, float), np.asarray(p2, float), np.asarray(groups)
+    idx = pd.Series(np.arange(len(y))).groupby(groups).indices
+    keys = np.array(list(idx))
+    rng = np.random.default_rng(seed)
+    diffs = []
+    for _ in range(B):
+        rows = np.concatenate([idx[k] for k in rng.choice(keys, size=len(keys), replace=True)])
+        d = _auc(y[rows], p1[rows]) - _auc(y[rows], p2[rows])
+        if np.isfinite(d):
+            diffs.append(d)
+    diffs = np.asarray(diffs)
+    a = (1 - level) / 2
+    lo, hi = np.percentile(diffs, [100 * a, 100 * (1 - a)])
+    return {"auc_diff": _auc(y, p1) - _auc(y, p2), "lo": float(lo), "hi": float(hi),
+            "p_one_sided": float((1 + (diffs <= 0).sum()) / (len(diffs) + 1)), "B": int(len(diffs))}
+
+
 def holm(pvals) -> list[float]:
     p = np.asarray(pvals, float)
     order = np.argsort(p)

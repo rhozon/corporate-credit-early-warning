@@ -47,6 +47,33 @@ def test_cluster_bootstrap_interval_contains_estimate():
     assert hi - lo > 0
 
 
+def _clustered_case(spread: bool, seed=3):
+    """30 firms of 80 quarters. Model 1 beats model 2 either in every firm or only inside firm 0."""
+    rng = np.random.default_rng(seed)
+    firm = np.repeat(np.arange(30), 80)
+    y = (rng.random(firm.size) < 0.05).astype(int)
+    y[:40] = 1
+    p2 = rng.random(firm.size)
+    p1 = p2.copy()
+    better = np.ones(firm.size, bool) if spread else firm == 0
+    p1[better] = np.where(y[better] == 1, 0.6 + 0.4 * rng.random(better.sum()), 0.6 * rng.random(better.sum()))
+    return y, p1, p2, firm
+
+
+def test_cluster_paired_test_agrees_with_delong_when_the_gain_is_everywhere():
+    y, p1, p2, firm = _clustered_case(spread=True)
+    out = stats.cluster_paired_auc_test(y, p1, p2, firm, B=400, seed=2026)
+    assert out["p_one_sided"] < 0.01 and out["lo"] > 0
+
+
+def test_cluster_paired_test_does_not_count_one_firm_as_many():
+    # The whole gain sits in one firm's 80 quarters: rows look independent to DeLong, firms do not.
+    y, p1, p2, firm = _clustered_case(spread=False)
+    assert stats.delong(y, p1, p2)[2] < 0.01
+    out = stats.cluster_paired_auc_test(y, p1, p2, firm, B=400, seed=2026)
+    assert out["p_one_sided"] > 0.2 and out["lo"] <= 0
+
+
 def test_ks_is_the_largest_gap_between_score_distributions():
     y = np.array([0, 0, 0, 1, 1, 1])
     p = np.array([0.1, 0.2, 0.6, 0.4, 0.8, 0.9])

@@ -46,6 +46,9 @@ def test_delong_table_compares_every_other_model_with_both_references():
     assert set(t["model"]) == {"xgb_pd12", "cox"}
     assert (t["p_holm"] >= t["p"] - 1e-12).all()
     assert (t.loc[t["model"] == "xgb_pd12", "auc_diff"] > 0).all()
+    # Beside DeLong, a paired test that resamples firms whole, Holm-adjusted the same way.
+    assert {"p_cluster", "p_cluster_holm", "diff_lo", "diff_hi"} <= set(t.columns)
+    assert (t["p_cluster_holm"] >= t["p_cluster"] - 1e-12).all()
 
 
 def test_primary_h2_test_finds_an_informative_signal_and_not_a_noise_one():
@@ -63,6 +66,7 @@ def test_primary_h2_test_finds_an_informative_signal_and_not_a_noise_one():
     assert good["model"] == "logit_hazard" and good["auc_signals"] > good["auc_base"]
     assert good["p_one_sided"] < 0.05
     assert noise["p_one_sided"] > 0.05
+    assert good["p_cluster_one_sided"] < 0.05 and good["diff_lo"] <= good["auc_diff"] <= good["diff_hi"]
 
 
 def test_calibration_by_horizon_selects_rows_by_window_not_by_outcome():
