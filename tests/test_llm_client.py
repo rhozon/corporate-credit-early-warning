@@ -106,12 +106,12 @@ def test_google_payload_folds_system_into_user_and_sets_temperature():
                                         "thinkingConfig": {"thinkingLevel": "minimal"}}
 
 
-def test_google_response_maps_to_chat_shape_with_zero_cost():
+def test_google_response_maps_to_chat_shape():
     resp = {"candidates": [{"content": {"parts": [{"text": '{"a":'}, {"text": " 1}"}]}}],
             "usageMetadata": {"promptTokenCount": 50, "candidatesTokenCount": 7}}
     out = llm_client._google_parse(resp)
     assert out["choices"][0]["message"]["content"] == '{"a": 1}'
-    assert out["usage"] == {"prompt_tokens": 50, "completion_tokens": 7, "cost": 0.0}
+    assert out["usage"] == {"prompt_tokens": 50, "completion_tokens": 7}   # cost from the model's prices
 
 
 def test_google_models_pick_the_google_transport(tmp_path):
@@ -151,6 +151,25 @@ def test_invalid_json_under_schema_raises(tmp_path):
     llm = make(tmp_path, Transport(content="not json"))
     with pytest.raises(ValueError):
         llm.complete("s", "u", schema={"type": "object"})
+
+
+def test_an_answer_that_is_not_json_is_paid_once_and_replayed_from_cache(tmp_path):
+    t = Transport(content="not json")
+    llm = make(tmp_path, t)
+    for _ in range(2):
+        with pytest.raises(ValueError):
+            llm.complete("s", "u", schema={"type": "object"})
+    assert len(t.calls) == 1                                    # the rerun fails the same way, for free
+    assert json.loads((tmp_path / "ledger.json").read_text())["calls"] == 1
+
+
+def test_google_cost_comes_from_the_configured_prices(tmp_path):
+    resp = {"candidates": [{"content": {"parts": [{"text": "ok"}]}}],
+            "usageMetadata": {"promptTokenCount": 1000, "candidatesTokenCount": 100}}
+    llm = LLM("google/paid-model", cache_dir=tmp_path, transport=lambda p: llm_client._google_parse(resp),
+              price_in=1e-6, price_out=2e-6)
+    llm.complete("s", "u")
+    assert json.loads((tmp_path / "ledger.json").read_text())["spent_usd"] == pytest.approx(1000e-6 + 100 * 2e-6)
 
 
 def test_mask_hides_names_and_cnpj_in_any_format():

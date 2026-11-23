@@ -129,9 +129,10 @@ def _google_parse(resp: dict) -> dict:
     parts = ((resp.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
     text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
     u = resp.get("usageMetadata", {})
+    # No cost field: the client prices the tokens with the model's configured rates (zero on the free tier).
     return {"choices": [{"message": {"content": text}}],
             "usage": {"prompt_tokens": u.get("promptTokenCount", 0),
-                      "completion_tokens": u.get("candidatesTokenCount", 0), "cost": 0.0}}
+                      "completion_tokens": u.get("candidatesTokenCount", 0)}}
 
 
 def _google(payload: dict, timeout: int = 180, tries: int = 30) -> dict:
@@ -228,7 +229,7 @@ class LLM:
             cost = usage.get("prompt_tokens", 0) * self.price_in + usage.get("completion_tokens", 0) * self.price_out
         self._charge(float(cost))
         content = resp["choices"][0]["message"]["content"] or ""
-        parsed = _parse_json(content) if schema is not None else content
-
+        # Cached before parsing: an answer that is not valid JSON is paid once and fails the same way on a rerun,
+        # so the caller's fallback replays from the cache too.
         _atomic_write(path, json.dumps({"model": self.model, "content": content, "usage": usage}, ensure_ascii=False))
-        return parsed
+        return _parse_json(content) if schema is not None else content
