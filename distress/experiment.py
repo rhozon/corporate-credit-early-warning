@@ -128,14 +128,16 @@ def h2_test(train: pd.DataFrame, test: pd.DataFrame, base: list[str], signals: l
             "auc_diff": diff, "z": z, "p_one_sided": p, "signals": list(signals), "keep_tails": list(keep_tails)}
 
 
-def calibration_by_horizon(preds: pd.DataFrame, horizons=(12, 24, 36)) -> pd.DataFrame:
-    """Observed default rate against the mean PD at each horizon (H3), on rows whose window is observed:
-    the firm defaulted within the horizon or was followed for at least that long."""
+def calibration_by_horizon(preds: pd.DataFrame, eval_end: pd.Timestamp, horizons=(12, 24, 36)) -> pd.DataFrame:
+    """Observed default rate against the mean PD at each horizon (H3), on rows whose window has closed by
+    ``eval_end``. Rows are chosen by date alone, never by outcome: keeping an open window only when it ended
+    in a filing would inflate the observed rate. As in ``y12``, a firm that leaves the registry inside the
+    window without a filing counts as a non-event."""
     rows = []
     for m, g in preds.groupby("model", sort=False):
         for h in horizons:
             dur, evt = g["dur"].values, g["evt"].values
-            valid = ((evt == 1) & (dur <= h)) | (dur >= h)
+            valid = (pd.to_datetime(g["q"]) + pd.DateOffset(months=h) <= eval_end).values
             y = ((evt == 1) & (dur <= h)).astype(int)[valid]
             p = g[f"pd{h}"].values[valid]
             row = {"model": m, "horizon": h, "n": int(valid.sum()), "events": int(y.sum()),

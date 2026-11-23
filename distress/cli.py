@@ -439,7 +439,7 @@ def cmd_test(a):
     res.to_csv(out / "test_h1.csv", index=False)
     preds.to_parquet(PRIVATE / "test_preds.parquet", index=False)
     experiment.delong_table(preds).to_csv(out / "test_delong.csv", index=False)
-    experiment.calibration_by_horizon(preds).to_csv(out / "test_h3.csv", index=False)
+    experiment.calibration_by_horizon(preds, eval_end).to_csv(out / "test_h3.csv", index=False)
 
     h2 = experiment.h2_test(train, test, experiment.BASE, experiment.SIGNALS, fit_end, eval_end)
     (out / "test_h2.json").write_text(json.dumps(h2, indent=2, default=float))

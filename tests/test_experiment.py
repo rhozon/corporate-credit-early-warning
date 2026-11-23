@@ -65,15 +65,21 @@ def test_primary_h2_test_finds_an_informative_signal_and_not_a_noise_one():
     assert noise["p_one_sided"] > 0.05
 
 
-def test_calibration_by_horizon_uses_only_windows_that_are_observed():
+def test_calibration_by_horizon_selects_rows_by_window_not_by_outcome():
     import numpy as np
 
-    preds = pd.DataFrame({"model": "m", "pd12": [0.1, 0.2, 0.3, 0.4], "pd24": [0.2, 0.3, 0.4, 0.5],
-                          "pd36": [0.3, 0.4, 0.5, 0.6], "dur": [5.0, 30.0, 14.0, 40.0], "evt": [1, 0, 0, 0]})
-    t = experiment.calibration_by_horizon(preds).set_index("horizon")
-    assert t.loc[12, "n"] == 4 and t.loc[12, "observed"] == 0.25          # row 3 survived 14 > 12 months
-    assert t.loc[24, "n"] == 3                                            # row 3 censored at 14 < 24: dropped
-    assert t.loc[36, "n"] == 2 and np.isclose(t.loc[36, "mean_pd"], 0.45)
+    # A: event after 5 months; B: event after 3 months, quarter near the data end; C: same quarter, no event,
+    # followed to the data end; D: registration cancelled after 8 months; E: followed 60 months.
+    q = pd.to_datetime(["2020-03-31", "2025-06-30", "2025-06-30", "2020-03-31", "2021-03-31"])
+    preds = pd.DataFrame({"model": "m", "q": q, "pd12": [0.1, 0.2, 0.3, 0.4, 0.5],
+                          "pd24": [0.2, 0.3, 0.4, 0.5, 0.6], "pd36": [0.3, 0.4, 0.5, 0.6, 0.7],
+                          "dur": [5.0, 3.0, 17.0, 8.0, 60.0], "evt": [1, 1, 0, 0, 0]})
+    t = experiment.calibration_by_horizon(preds, pd.Timestamp("2026-11-20")).set_index("horizon")
+    assert t.loc[12, "n"] == 5 and t.loc[12, "events"] == 2       # every 12-month window has closed
+    # B's 24- and 36-month windows are still open: it leaves with C, though it ended in a filing.
+    assert t.loc[24, "n"] == 3 and t.loc[24, "events"] == 1
+    assert t.loc[36, "n"] == 3 and t.loc[36, "events"] == 1
+    assert np.isclose(t.loc[36, "mean_pd"], (0.3 + 0.6 + 0.7) / 3)   # D counts as a non-event, like y12
 
 
 def test_run_keeps_duration_and_event_for_calibration():
