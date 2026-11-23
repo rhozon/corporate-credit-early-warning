@@ -120,6 +120,26 @@ def cmd_agreement(a):
                     pd.read_parquet(PRIVATE / "signals_secondary.parquet"))
 
 
+def cmd_counts(a=None):
+    """The counts the paper quotes, written from the labels: signals per category and year, and the
+    full-text flags that fall inside an episode already open (with the current event list)."""
+    import json
+
+    from .llm import signals
+
+    out = ROOT / "results"
+    out.mkdir(exist_ok=True)
+    counts = signals.signal_counts(pd.read_parquet(PRIVATE / "signals_primary.parquet"))
+    (out / "signal_counts.json").write_text(json.dumps(counts, indent=2))
+    ft_path = out / "subject_vs_fulltext.json"
+    if ft_path.exists() and (PRIVATE / "signals_fulltext_sample.parquet").exists():
+        ft = json.loads(ft_path.read_text())
+        ft["checks"] = signals.fulltext_checks(pd.read_parquet(PRIVATE / "signals_fulltext_sample.parquet"),
+                                               load_events())
+        ft_path.write_text(json.dumps(ft, indent=2, default=float))
+    print({k: counts[k] for k in ("documents", "any_signal", "any_feature_signal")})
+
+
 def cmd_signals(a):
     import json
 
@@ -143,6 +163,8 @@ def cmd_signals(a):
         cl.to_parquet(PRIVATE / f"signals_{tag}.parquet")
         out[tag] = cl
         print(tag, "done:", len(cl), "documents")
+        if tag == "primary":
+            cmd_counts()
     if "primary" not in out and (PRIVATE / "signals_primary.parquet").exists():
         out["primary"] = pd.read_parquet(PRIVATE / "signals_primary.parquet")
     (ROOT / "results").mkdir(exist_ok=True)
@@ -272,7 +294,8 @@ def cmd_fulltext_sample(a):
     ok = full["read_ok"].values
     loss = signals.subject_loss(subj[ok], full[ok])
     res = {"sample": a.n, "read": int(ok.sum()), "model": PRIMARY[0], "seed": 2026,
-           "kappa": signals.agreement(subj[ok], full[ok]), "loss": loss}
+           "kappa": signals.agreement(subj[ok], full[ok]), "loss": loss,
+           "checks": signals.fulltext_checks(full, load_events())}
     (ROOT / "results").mkdir(exist_ok=True)
     (ROOT / "results" / "subject_vs_fulltext.json").write_text(json.dumps(res, indent=2, default=float))
     full.assign(doc_id=sample["doc_id"].values).to_parquet(PRIVATE / "signals_fulltext_sample.parquet", index=False)
@@ -573,6 +596,7 @@ def main(argv=None):
     sg.set_defaults(fn=cmd_signals)
     ag = sub.add_parser("agreement")
     ag.set_defaults(fn=cmd_agreement)
+    sub.add_parser("counts").set_defaults(fn=cmd_counts)
     gd = sub.add_parser("gold")
     gd.add_argument("sheet")
     gd.add_argument("--n", type=int, default=150)

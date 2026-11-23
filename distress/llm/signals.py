@@ -172,6 +172,41 @@ def classify_fulltext(docs: pd.DataFrame, texts: dict, llm: LLM, workers: int = 
     return out
 
 
+def signal_counts(classified: pd.DataFrame) -> dict:
+    """Documents classified, documents with any signal (and with any signal used as a feature), per category
+    and documents per year: the counts the paper quotes, written from the labels."""
+    lab = classified[CATEGORIES].astype(bool)
+    years = pd.to_datetime(classified["delivered"]).dt.year.value_counts().sort_index()
+    return {"documents": int(len(classified)), "any_signal": int(lab.any(axis=1).sum()),
+            "any_feature_signal": int(lab[FEATURE_CATEGORIES].any(axis=1).sum()),
+            "by_category": {c: int(lab[c].sum()) for c in CATEGORIES},
+            "by_year": {str(y): int(n) for y, n in years.items()}}
+
+
+FULLTEXT_NOTE = ("Full-text flags of the company's own recovery come almost all from firms already in an open "
+                 "recovery episode, whose filings restate that status; they are not new information.")
+
+
+def fulltext_checks(full: pd.DataFrame, events: pd.DataFrame) -> dict:
+    """How many full-text flags of own recovery and debt restructuring fall inside an episode already open
+    for the firm (event date to episode end) when the document was filed."""
+    read = full[full["read_ok"].astype(bool)]
+    ev = events.assign(event_date=pd.to_datetime(events["event_date"]), episode_end=pd.to_datetime(events["episode_end"]))
+
+    def inside(r) -> bool:
+        e = ev[ev["cd_cvm"] == r.cd_cvm]
+        when = pd.Timestamp(r.delivered)
+        return bool(((e["event_date"] <= when) & (when <= e["episode_end"])).any())
+
+    out = {}
+    for c in ("own_recovery", "debt_restructuring"):
+        flagged = read[read[c].astype(bool)]
+        out[f"{c}_full_text_inside_open_episode"] = int(sum(inside(r) for r in flagged.itertuples()))
+        out[f"{c}_full_text"] = int(len(flagged))
+    out["note"] = FULLTEXT_NOTE
+    return out
+
+
 def subject_loss(subject: pd.DataFrame, full: pd.DataFrame) -> dict:
     """Per category: documents flagged from the full text, from the subject, by both, and the share of
     full-text flags the subject also finds."""

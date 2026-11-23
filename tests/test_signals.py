@@ -194,3 +194,30 @@ def test_gold_metrics_weights_each_document_by_its_chance_of_being_drawn():
     # weights 2, 2, 10, 10: precision 2 / (2 + 10), recall 2 / (2 + 2 + 10)
     assert m["primary"]["precision"] == pytest.approx(2 / 12)
     assert m["primary"]["recall"] == pytest.approx(2 / 14)
+
+
+def _labelled(rows):
+    cols = signals.CATEGORIES + ["none"]
+    out = pd.DataFrame([{c: int(c in labs) for c in cols} for _, _, labs in rows])
+    out["cd_cvm"] = [cd for cd, _, _ in rows]
+    out["delivered"] = pd.to_datetime([d for _, d, _ in rows])
+    return out
+
+
+def test_signal_counts_are_computed_from_the_labels():
+    cl = _labelled([(1, "2019-03-01", {"covenant"}), (1, "2019-05-01", {"own_recovery"}),
+                    (2, "2020-01-10", {"none"}), (3, "2020-02-01", {"sanction", "covenant"})])
+    c = signals.signal_counts(cl)
+    assert c["documents"] == 4 and c["any_signal"] == 3 and c["any_feature_signal"] == 2
+    assert c["by_category"]["covenant"] == 2 and c["by_category"]["own_recovery"] == 1
+    assert c["by_year"] == {"2019": 2, "2020": 2}
+
+
+def test_fulltext_checks_count_own_recovery_flags_inside_open_episodes():
+    full = _labelled([(1, "2020-06-01", {"own_recovery"}), (1, "2018-01-01", {"own_recovery"}),
+                      (2, "2021-01-01", {"debt_restructuring"})]).assign(read_ok=[True, True, True])
+    ev = pd.DataFrame({"cd_cvm": [1], "event_date": pd.to_datetime(["2019-04-01"]),
+                       "episode_end": pd.to_datetime(["2099-12-31"])})
+    ch = signals.fulltext_checks(full, ev)
+    assert ch["own_recovery_full_text"] == 2 and ch["own_recovery_full_text_inside_open_episode"] == 1
+    assert ch["debt_restructuring_full_text"] == 1 and ch["debt_restructuring_full_text_inside_open_episode"] == 0
