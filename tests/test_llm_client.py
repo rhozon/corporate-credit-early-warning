@@ -147,6 +147,14 @@ def test_cache_pack_round_trip(tmp_path):
     assert make(dst, t).complete("s", "u1") == '{"ok": true}' and t.calls == []
 
 
+def test_cache_pack_can_mask_what_it_ships(tmp_path):
+    src, dst, pack = tmp_path / "a", tmp_path / "b", tmp_path / "answers.jsonl.gz"
+    make(src, Transport(content="Parceria com Bradesco renovada.")).complete("s", "u1")
+    llm_client.pack_cache(src, pack, transform=lambda s: s.replace("Bradesco", "[outra companhia]"))
+    llm_client.unpack_cache(pack, dst)
+    assert make(dst, Transport()).complete("s", "u1") == "Parceria com [outra companhia] renovada."
+
+
 def test_invalid_json_under_schema_raises(tmp_path):
     llm = make(tmp_path, Transport(content="not json"))
     with pytest.raises(ValueError):

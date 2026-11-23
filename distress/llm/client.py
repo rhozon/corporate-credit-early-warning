@@ -65,8 +65,9 @@ def _atomic_write(path: Path, text: str, tries: int = 10) -> None:
         raise
 
 
-def pack_cache(cache_dir: Path, out: Path) -> int:
-    """All cached answers in one gzipped JSON-lines file, keyed by their hash."""
+def pack_cache(cache_dir: Path, out: Path, transform: Callable[[str], str] | None = None) -> int:
+    """All cached answers in one gzipped JSON-lines file, keyed by their hash. ``transform`` rewrites each
+    answer's text before it ships (the repository masks solvent companies' names in the memo drafts)."""
     import gzip
 
     n = 0
@@ -75,7 +76,10 @@ def pack_cache(cache_dir: Path, out: Path) -> int:
         for p in sorted(Path(cache_dir).rglob("*.json")):
             if p.name == "ledger.json":
                 continue
-            f.write(json.dumps({"key": p.stem, **json.loads(p.read_text(encoding="utf-8"))}, ensure_ascii=False) + "\n")
+            rec = json.loads(p.read_text(encoding="utf-8"))
+            if transform is not None and isinstance(rec.get("content"), str):
+                rec["content"] = transform(rec["content"])
+            f.write(json.dumps({"key": p.stem, **rec}, ensure_ascii=False) + "\n")
             n += 1
     return n
 

@@ -140,6 +140,39 @@ def cmd_counts(a=None):
     print({k: counts[k] for k in ("documents", "any_signal", "any_feature_signal")})
 
 
+def _guard_lists():
+    from . import public
+
+    cad, firms = pd.read_csv(DATA / "company_names.csv"), public.event_firms(DATA)
+    return public.solvent_names(cad, firms), public.past_case_names(cad, firms)
+
+
+def cmd_pack(a):
+    """The live answer cache packed for the repository, with solvent companies' names masked."""
+    from . import public
+    from .llm import client
+
+    names, keep = _guard_lists()
+    n = client.pack_cache(client.CACHE, ROOT / "cache" / "llm_answers.jsonl.gz",
+                          transform=lambda s: public.mask(s, names, keep))
+    print("answers packed:", n)
+
+
+def cmd_guard(a):
+    """Scan published files (site pages, the rendered paper, anything else) for a solvent company named
+    next to a risk figure. Exits non-zero on a hit."""
+    from . import public
+
+    names, keep = _guard_lists()
+    bad = {p: hits for p in a.paths if (hits := public.scan_file(Path(p), names, keep))}
+    for p, hits in bad.items():
+        for n, snip in hits:
+            print(f"{p}: {n}: {snip[:160]}")
+    if bad:
+        raise SystemExit(1)
+    print("clean:", len(a.paths), "file(s)")
+
+
 def cmd_signals(a):
     import json
 
@@ -597,6 +630,10 @@ def main(argv=None):
     ag = sub.add_parser("agreement")
     ag.set_defaults(fn=cmd_agreement)
     sub.add_parser("counts").set_defaults(fn=cmd_counts)
+    sub.add_parser("pack").set_defaults(fn=cmd_pack)
+    gu = sub.add_parser("guard")
+    gu.add_argument("paths", nargs="+")
+    gu.set_defaults(fn=cmd_guard)
     gd = sub.add_parser("gold")
     gd.add_argument("sheet")
     gd.add_argument("--n", type=int, default=150)

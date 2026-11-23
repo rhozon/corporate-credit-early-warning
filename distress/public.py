@@ -23,7 +23,7 @@ DISTRESS_LABELS = set(CATEGORIES)
 # Registered trade names that are also ordinary words or place names. A one-word name in this list is not
 # taken as a company mention; every entry was added when it produced a false alarm (title-case filing
 # subjects such as "Desmobilização de Ativos" or "Ano-Safra 2024'25"). Longer names stay guarded.
-COMMON_WORDS = {"ATIVOS", "BAHIA", "BANK", "BASE", "BRAZILIAN", "CAIXA", "CASA", "CASAS", "CENTRO", "CREDIT",
+COMMON_WORDS = {"AMERICAN", "ATIVOS", "BAHIA", "BANK", "BASE", "BRAZILIAN", "CAIXA", "CASA", "CASAS", "CENTRO", "CREDIT",
                 "EMPREENDIMENTOS", "ENERGIA", "FINANCEIRA", "FRAME", "GLOBAL", "HOLDING", "IMPORT", "INVESTIMENTOS",
                 "JORNAL", "METAL", "MINAS", "NACIONAL", "NORDESTE", "NOVA", "NOVO", "OESTE", "PENALTY", "PLANO",
                 "PRODUTOS", "SAFRA", "SEGUROS", "SOCIEDADE", "STANDARD", "TERRA", "TRUE", "VISION"}
@@ -94,8 +94,9 @@ def leaks(text: str, names: list[str], window: int = 200, keep=None) -> list[tup
     Past-case names in ``keep`` are blanked first."""
     text = _blank(text, keep)
     low, found = text.lower(), {}
+    words = set(re.findall(r"\w+", low))
     for n in names:
-        if n.lower() not in low:
+        if not all(w in words for w in re.findall(r"\w+", n.lower())) or n.lower() not in low:
             continue
         for m in _pattern(n).finditer(text):
             near = text[max(0, m.start() - window):m.end() + window]
@@ -103,6 +104,33 @@ def leaks(text: str, names: list[str], window: int = 200, keep=None) -> list[tup
                 found.setdefault(n, near.replace("\n", " ")[:2 * window])
                 break
     return sorted(found.items())
+
+
+def file_text(path: Path) -> str:
+    """The readable text of a published file: a packed cache (each answer), a PDF, an HTML page or plain text.
+    Separate pieces are kept far apart, so a name in one is never read next to a figure in another."""
+    import gzip
+    import html
+    import json
+
+    path, gap = Path(path), "\n" + " " * 600 + "\n"
+    if path.name.endswith(".jsonl.gz"):
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            return gap.join(str(json.loads(line).get("content") or "") for line in f)
+    if path.suffix.lower() == ".pdf":
+        from pypdf import PdfReader
+
+        return gap.join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix.lower() in (".html", ".htm"):
+        text = re.sub(r"<script.*?</script>|<style.*?</style>", " ", text, flags=re.S | re.I)
+        text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+    return text
+
+
+def scan_file(path: Path, names: list[str], keep=None) -> list[tuple[str, str]]:
+    """``leaks`` over a published file of any of the kinds ``file_text`` reads."""
+    return leaks(file_text(path), names, keep=keep)
 
 
 def table_leaks(df: pd.DataFrame) -> bool:
