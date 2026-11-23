@@ -67,3 +67,29 @@ changes.
   within seven days of it; one it attributes to another company goes; where the reader cannot
   tell, the first reader's decision stands.
 - `python -m distress.cli second-review` writes `data/events_reviewed.csv`.
+
+## Corrections, 2026-11-23 (after the test period was opened)
+
+An independent review of the code, after the results were published, found errors in how
+several registered quantities were computed. They were corrected and the whole test was run
+again; the published results are the corrected run. The hypotheses, models, primary test,
+split, metrics and thresholds above are unchanged. Each correction is a fix to code that did
+not do what this file describes, and each is tested; none was chosen by looking at a test
+result.
+
+- Going-concern flag. The text rule also matched the auditor-responsibility paragraph that every
+  audit opinion carries since the 2016 reports, so it flagged about 95% of annual filings from
+  then on. The rule now accepts only statements of a material uncertainty about the filer
+  (`features.going_concern_rule`).
+- H3 sample. Rows whose window had not closed by the data end were kept only when they ended in
+  a filing, which overstated the observed rates. Rows are now chosen by date alone
+  (`experiment.calibration_by_horizon`).
+- Episodes. An episode holding the registry's current status was closed at its last filing, so
+  firms still in recovery went back to the risk set, and some firms in recovery since before 2011
+  were not left-truncated. Such episodes now stay open, a bankruptcy never ends, and a review that
+  rejects an episode's first document reopens it at the company's next own filing
+  (`events.build_events`, `events.apply_review`).
+- Trailing twelve months for firms whose fiscal year does not end in December
+  (`features.point_in_time`).
+- Added beside DeLong, not replacing it: a paired bootstrap that resamples firms whole, for every
+  AUC comparison, since a firm's quarters are not independent.
