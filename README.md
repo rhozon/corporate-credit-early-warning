@@ -9,6 +9,14 @@ out-of-time test. Distress signals read by language models from material-fact fi
 tested by ablation, with the primary test written down before the test period was opened
 ([PREREGISTRATION.md](PREREGISTRATION.md)).
 
+> **Results under revision (2026-11-23).** A code review found two errors that change
+> published results. The going-concern rule also matched the auditor-responsibility sentence
+> that every audit report carries since 2017, so `gc_flag` is wrong for most filings from then
+> on. The H3 calibration sample kept rows with an unfinished window only when they ended in a
+> filing, which overstated the observed rates. The H3 finding, the exploratory H2 p-value and
+> the credit memos are withdrawn; every number below comes from the run being corrected. The
+> corrected run will be published here with an erratum.
+
 The repository also holds the systematic literature review (PRISMA 2020) and the paper.
 
 ## What is and is not published
@@ -128,12 +136,13 @@ Out-of-time test from 2020, 13,245 firm-quarters, 128 followed by a filing withi
 - H1: the three tree ensembles beat the Altman score and the hazard logit after Holm's
   correction; Cox beats the logit only; the neural networks beat neither. The order holds
   with the narrow event definition and in four of five years of an annual refit.
-- H3: no model is calibrated at every horizon; at 36 months all but DeepHit underestimate the
-  observed rate (5.7%). The curves need recalibration before they feed a provision.
+- H3: withdrawn. The observed rates came from a sample selected on the outcome; see the
+  note at the top.
 - H2, pre-registered: no gain from the signals (AUC 0.756 with, 0.758 without, p = 0.58).
   Winsorising at the 99th percentile had turned the five rarest signal counts into zeros; an
-  exploratory rerun that keeps them gives 0.783 (p = 0.01). It was decided after the test was
-  opened and needs a new test period to count (`results/test_h2_exploratory.json`).
+  exploratory rerun that keeps them gives 0.783. It was decided after the test was opened and
+  needs a new test period to count (`results/test_h2_exploratory.json`). Its p-value is
+  withdrawn until the corrected run.
 
 ## License
 
