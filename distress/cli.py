@@ -421,6 +421,13 @@ def cmd_second_review(a):
 
     draft = pd.read_csv(DATA / "events_draft.csv", parse_dates=["event_date", "episode_end"])
     second = pd.read_csv(DATA / "events_second_reader.csv")
+    # A second-reader row whose event the episode rules have since merged into an open episode has no
+    # event left to review.
+    keys = set(zip(draft["cd_cvm"], draft["event_date"].dt.date, draft["event_type"]))
+    here = [k in keys for k in zip(second["cd_cvm"], pd.to_datetime(second["event_date"]).dt.date, second["event_type"])]
+    if not all(here):
+        print("second-reader rows without a draft event (merged into an open episode):", len(here) - sum(here))
+    second = second[here]
     reviewed = events.apply_review(draft, review_aid.rule_sheet(draft, second), _adjudicated())
     reviewed.to_csv(DATA / "events_reviewed.csv", index=False)
     print(reviewed["review"].value_counts().to_dict(), "| removed:", len(draft) - len(reviewed),
