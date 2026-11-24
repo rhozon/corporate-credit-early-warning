@@ -172,6 +172,50 @@ def _gc_text(t) -> bool:
     return any(not _GC_INVESTEE.match(s, m.end()) for m in _GC.finditer(s))
 
 
+def _audit_firm(cnpj) -> str:
+    """The audit firm behind a CNPJ: its first eight digits, so another office of the same firm is the same
+    auditor. An individual auditor (CPF) keeps the whole number."""
+    digits = re.sub(r"\D", "", str(cnpj or ""))
+    return digits[:8] if len(digits) == 14 else digits
+
+
+def auditor_changes(docs: pd.DataFrame, aud: pd.DataFrame) -> pd.DataFrame:
+    """For each registration form, the start date of the latest change of audit firm known when it was
+    received (NaT if none). A change needs a known earlier auditor: one listed by an earlier form of the
+    firm, or one the same form lists as having left. A firm's first auditor is not a change."""
+    a = aud.assign(firm=aud["auditor_cnpj"].map(_audit_firm))
+    by_doc = {k: g for k, g in a.groupby("id_doc")}
+    out = []
+    for cd, g in docs.dropna(subset=["dt_receb"]).sort_values(["cd_cvm", "dt_receb", "id_doc"]).groupby("cd_cvm"):
+        prev, last = None, pd.NaT
+        for r in g.itertuples(index=False):
+            rows = by_doc.get(r.id_doc)
+            if rows is not None and len(rows):
+                active = rows[rows["end"].isna() | (rows["end"] > r.dt_receb)]
+                cur = (active if len(active) else rows).sort_values("start", na_position="first").iloc[-1]
+                left = rows[rows["end"].notna() & (rows["end"] <= r.dt_receb) & (rows["firm"] != cur["firm"])]
+                if (prev is not None and prev != cur["firm"]) or len(left):
+                    when = cur["start"] if pd.notna(cur["start"]) else r.dt_receb
+                    if pd.isna(last) or when > last:
+                        last = when
+                prev = cur["firm"]
+            out.append({"cd_cvm": cd, "id_doc": r.id_doc, "dt_receb": r.dt_receb, "change_date": last})
+    return pd.DataFrame(out, columns=["cd_cvm", "id_doc", "dt_receb", "change_date"])
+
+
+def add_auditor_change(rows: pd.DataFrame, changes: pd.DataFrame, days: int = 365) -> pd.DataFrame:
+    """``rows`` with ``auditor_change``: 1 if the forms received by ``as_of`` show a new audit firm starting
+    in the ``days`` before it."""
+    c = changes.dropna(subset=["dt_receb"]).sort_values("dt_receb")[["cd_cvm", "dt_receb", "change_date"]]
+    r = rows[["cd_cvm", "as_of"]].assign(_i=np.arange(len(rows)))
+    m = pd.merge_asof(r.sort_values("as_of"), c.astype({"cd_cvm": r["cd_cvm"].dtype}), left_on="as_of",
+                      right_on="dt_receb", by="cd_cvm", direction="backward").sort_values("_i")
+    age = (m["as_of"] - m["change_date"]).dt.days
+    out = rows.copy()
+    out["auditor_change"] = ((age >= 0) & (age <= days)).astype(int).values
+    return out
+
+
 def going_concern_rule(parecer: pd.DataFrame) -> pd.DataFrame:
     """Flag filings whose auditor text states a material uncertainty about the filer's going concern."""
     p = parecer.assign(gc_flag=parecer["text"].map(_gc_text))

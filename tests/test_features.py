@@ -154,3 +154,38 @@ def test_read_parecer_links_text_to_filing_date(tmp_path):
         z.writestr("itr_cia_aberta_parecer_2024.csv", par.encode("latin1"))
     p = cvm.read_parecer("itr", [2024], tmp_path)
     assert p[["cd_cvm", "dt_receb", "text"]].iloc[0].tolist() == [1234, pd.Timestamp("2024-05-10"), "incerteza relevante"]
+
+
+def _fca():
+    docs = pd.DataFrame({"cd_cvm": [1, 1, 2, 3, 4, 4], "id_doc": [10, 11, 20, 30, 40, 41],
+                         "dt_receb": pd.to_datetime(["2015-05-01", "2016-05-01", "2016-05-01", "2016-05-01",
+                                                     "2015-05-01", "2016-05-01"])})
+    aud = pd.DataFrame({
+        "id_doc": [10, 11, 20, 30, 30, 40, 41],
+        "auditor_cnpj": ["57.755.217/0001-29", "61.366.936/0001-25", "57.755.217/0001-29", "57.755.217/0003-90",
+                         "61.366.936/0001-25", "57.755.217/0001-29", "57.755.217/0003-90"],
+        "start": pd.to_datetime(["2011-01-01", "2016-04-01", "2016-03-01", "2016-04-01", "2012-01-01",
+                                 "2011-01-01", "2016-01-01"]),
+        "end": pd.to_datetime([None, None, None, None, "2016-03-31", None, None])})
+    return docs, aud
+
+
+def test_auditor_change_dates_come_from_a_new_audit_firm_only():
+    from distress import features
+
+    ch = features.auditor_changes(*_fca()).set_index("id_doc")["change_date"]
+    assert pd.isna(ch[10]) and ch[11] == pd.Timestamp("2016-04-01")  # firm 1: KPMG, then EY
+    assert pd.isna(ch[20])  # firm 2: first form, no earlier auditor known
+    assert ch[30] == pd.Timestamp("2016-04-01")  # firm 3: the form lists the auditor that left
+    assert pd.isna(ch[41])  # firm 4: another office of the same audit firm is not a change
+
+
+def test_auditor_change_flag_uses_forms_received_by_then_and_lasts_a_year():
+    from distress import features
+
+    rows = pd.DataFrame({"cd_cvm": [1, 1, 1, 1, 2, 4],
+                         "as_of": pd.to_datetime(["2016-03-31", "2016-06-30", "2017-03-31", "2017-06-30",
+                                                  "2016-06-30", "2016-06-30"])})
+    out = features.add_auditor_change(rows, features.auditor_changes(*_fca()))
+    assert out["auditor_change"].tolist() == [0, 1, 1, 0, 0, 0]
+    assert out.index.equals(rows.index) and out["as_of"].equals(rows["as_of"])

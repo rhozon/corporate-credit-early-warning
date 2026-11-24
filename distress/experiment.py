@@ -19,6 +19,8 @@ ACCOUNTING = ["wc_ta", "re_ta", "ebit_ta", "eq_tl", "lev", "curr", "cash_ta", "i
 DISCLOSURE = ["filing_delay_days", "n_restatements_4q", "info_age_days", "gc_flag", "prior_event"]
 MACRO = ["selic", "ipca12", "ibc_yoy", "unemp", "pj_default", "spread"]
 BASE = ACCOUNTING + DISCLOSURE + MACRO
+# Not in the registered base: compared only in an exploratory analysis after the test was opened.
+EXPLORATORY = ["auditor_change"]
 
 
 def validation_split(train: pd.DataFrame):
@@ -76,25 +78,48 @@ def _clustered(y, p1, p2, firms, B: int, seed: int) -> dict:
     return {"p_cluster": c["p_one_sided"], "diff_lo": c["lo"], "diff_hi": c["hi"]}
 
 
-def ablation_table(base: pd.DataFrame, signals: pd.DataFrame, B: int = 1000, seed: int = 2026) -> pd.DataFrame:
-    """Each model with and without the signals (one-sided DeLong, signals better). The primary model's
-    row is the pre-registered test; Holm's correction covers the other, secondary, rows."""
+def ablation_table(base: pd.DataFrame, signals: pd.DataFrame, B: int = 1000, seed: int = 2026,
+                   primary: str | None = PRIMARY_MODEL) -> pd.DataFrame:
+    """Each model with and without the added columns (one-sided DeLong, added columns better). The primary
+    model's row is the pre-registered test; Holm's correction covers the other, secondary, rows. With
+    ``primary=None`` every row is exploratory and Holm covers them all."""
     rows = []
     for m, g in base[base["complete"]].groupby("model", sort=False):
         s = signals[(signals["model"] == m) & signals["complete"]]
         diff, z, p = stats.delong(g["y12"].values, s["pd12"].values, g["pd12"].values)
-        rows.append({"model": m, "role": "primary" if m == PRIMARY_MODEL else "secondary",
+        rows.append({"model": m, "role": "primary" if m == primary else ("secondary" if primary else "exploratory"),
                      "auc_base": evaluate.metrics(g["y12"].values, g["pd12"].values)["auc"],
                      "auc_signals": evaluate.metrics(s["y12"].values, s["pd12"].values)["auc"],
                      "auc_diff": diff, "z": z, "p": p,
                      **_clustered(g["y12"].values, s["pd12"].values, g["pd12"].values, g["cd_cvm"].values, B, seed)})
     out = pd.DataFrame(rows)
-    sec = out["role"] == "secondary"
+    sec = out["role"] != "primary"
     out["p_holm"], out["p_cluster_holm"] = np.nan, np.nan
     if sec.any():
         out.loc[sec, "p_holm"] = stats.holm(out.loc[sec, "p"])
         out.loc[sec, "p_cluster_holm"] = stats.holm(out.loc[sec, "p_cluster"])
     return out
+
+
+def drivers(train: pd.DataFrame, test: pd.DataFrame, features: list[str], fit_end: pd.Timestamp,
+            fast: bool = False, seed: int = 2026) -> pd.DataFrame:
+    """What moves the risk: the Cox model's hazard ratio per standard deviation of each predictor, with its
+    95% interval, and the XGBoost 12-month classifier's mean absolute SHAP contribution (log-odds) on the
+    test rows. Both models are fitted on ``train`` exactly as in the test. Sorted by SHAP."""
+    from xgboost import DMatrix
+
+    cox = MODELS["cox"](features=features, seed=seed, fast=fast).fit(train, horizon_end=fit_end)
+    s = cox.cph.summary
+    xgb = MODELS["xgb_pd12"](features=features, seed=seed, fast=fast).fit(train, horizon_end=fit_end)
+    contrib = xgb.clf.get_booster().predict(DMatrix(xgb.prep.transform(test[features], scale=False)),
+                                            pred_contribs=True)[:, :-1]
+    out = pd.DataFrame({"feature": features})
+    for col, src in (("cox_hr", "exp(coef)"), ("cox_hr_lo", "exp(coef) lower 95%"),
+                     ("cox_hr_hi", "exp(coef) upper 95%"), ("cox_p", "p")):
+        out[col] = out["feature"].map(s[src])
+    out["shap_mean_abs"] = np.abs(contrib).mean(axis=0)
+    out["shap_mean"] = contrib.mean(axis=0)
+    return out.sort_values("shap_mean_abs", ascending=False).reset_index(drop=True)
 
 
 def delong_table(preds: pd.DataFrame, references=REFERENCES, B: int = 1000, seed: int = 2026) -> pd.DataFrame:

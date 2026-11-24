@@ -47,3 +47,26 @@ def test_download_uses_cache_without_network(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cvm, "_get", boom)
     assert cvm.download("ipe", 2025, tmp_path) == target
+
+
+def test_read_fca_joins_each_auditor_row_to_its_form_receipt_date(tmp_path):
+    import zipfile
+
+    from distress import cvm
+
+    head = "CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;CATEG_DOC;ID_DOC;DT_RECEB;LINK_DOC\n"
+    main = head + "11.222.333/0001-44;2015-01-01;1;ACME SA;001234;FCA;555;2015-05-01;x\n"
+    aud = ("CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Empresarial;Auditor;CPF_CNPJ_Auditor;"
+           "Codigo_CVM_Auditor;Origem_Auditor;Data_Inicio_Atuacao_Auditor;Data_Fim_Atuacao_Auditor;"
+           "Responsavel_Tecnico;CPF_Responsavel_Tecnico;Data_Inicio_Atuacao_Responsavel_Tecnico;"
+           "Data_Fim_Atuacao_Responsavel_Tecnico\n"
+           "11.222.333/0001-44;2015-01-01;1;555;ACME SA;KPMG;57.755.217/0001-29;004189;Nacional;2011-01-01;;"
+           "Fulano;000;2011-01-01;\n")
+    with zipfile.ZipFile(tmp_path / "fca_cia_aberta_2015.zip", "w") as z:
+        z.writestr("fca_cia_aberta_2015.csv", main.encode("latin1"))
+        z.writestr("fca_cia_aberta_auditor_2015.csv", aud.encode("latin1"))
+    docs, auditors = cvm.read_fca([2015], raw_dir=tmp_path)
+    assert docs.to_dict("records") == [{"cd_cvm": 1234, "id_doc": 555, "dt_receb": pd.Timestamp("2015-05-01")}]
+    a = auditors.iloc[0]
+    assert a["id_doc"] == 555 and a["auditor_cnpj"] == "57.755.217/0001-29"
+    assert a["start"] == pd.Timestamp("2011-01-01") and pd.isna(a["end"])

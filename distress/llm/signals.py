@@ -69,6 +69,19 @@ def name_variants(name: str) -> list[str]:
     return [v for v in out if v]
 
 
+def firm_names(name: str, trade_name: str | None = None) -> list[str]:
+    """Names to mask for one firm: the registered name's variants and, when the registry has one, the trade
+    name's (a brand such as "GPA" often heads the subject line). Generic words are never masked."""
+    out = list(name_variants(name))
+    if isinstance(trade_name, str) and trade_name.strip():
+        out += [v for v in name_variants(trade_name) if v.strip().upper() not in GENERIC and len(v.strip()) >= 2]
+    return list(dict.fromkeys(out))
+
+
+def _trade(docs: pd.DataFrame):
+    return docs["trade_name"] if "trade_name" in docs else [None] * len(docs)
+
+
 def parse_batch(obj, n: int) -> list[set]:
     out = [{"none"} for _ in range(n)]
     items = obj.get("items", []) if isinstance(obj, dict) else []
@@ -95,7 +108,8 @@ def _classify_batch(llm: LLM, subjects: list[str]) -> list[set]:
 
 
 def classify_subjects(docs: pd.DataFrame, llm: LLM, batch: int = 25, workers: int = 1) -> pd.DataFrame:
-    masked = [mask(s, name_variants(n), c) for s, n, c in zip(docs["subject"], docs["name"], docs["cnpj"])]
+    masked = [mask(s, firm_names(n, tn), c)
+              for s, n, tn, c in zip(docs["subject"], docs["name"], _trade(docs), docs["cnpj"])]
     chunks = [masked[i:i + batch] for i in range(0, len(masked), batch)]
     with ThreadPoolExecutor(max_workers=workers) as ex:
         results = list(ex.map(lambda ch: _classify_batch(llm, ch), chunks))
@@ -161,7 +175,7 @@ def classify_fulltext(docs: pd.DataFrame, texts: dict, llm: LLM, workers: int = 
         if not t:
             return None
         t = t if len(t) <= head + tail else t[:head] + "\n[...]\n" + t[-tail:]
-        return _classify_doc(llm, mask(t, name_variants(r.name), r.cnpj))
+        return _classify_doc(llm, mask(t, firm_names(r.name, getattr(r, "trade_name", None)), r.cnpj))
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         labels = list(ex.map(one, rows))

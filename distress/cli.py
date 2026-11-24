@@ -52,6 +52,7 @@ def cmd_events(a):
 
 
 ITR_YEARS, DFP_YEARS = range(2011, 2027), range(2010, 2027)
+FCA_YEARS = range(2010, 2027)
 
 
 def load_events() -> pd.DataFrame:
@@ -91,6 +92,8 @@ def cmd_panel(a):
                       left_on="as_of", right_on="dt_receb", by="cd_cvm", direction="backward")
     r["gc_flag"] = r["gc_flag"].fillna(False).astype(int)
     r = r.drop(columns=["dt_receb"])
+    # Not one of the registered predictors: used only in an exploratory comparison (see cmd_test).
+    r = features.add_auditor_change(r, features.auditor_changes(*cvm.read_fca(FCA_YEARS)))
     r.to_parquet(DATA / "features.parquet", index=False)
 
     cad = cvm.read_cad().drop_duplicates("cd_cvm")
@@ -183,6 +186,8 @@ def cmd_signals(a):
     fr = ipe[ipe["category"].str.startswith("Fato Relevante")]
     fr = events.non_financial(fr, cad).dropna(subset=["delivered"]).sort_values(["cd_cvm", "delivered"])
     fr = fr[fr["subject"].str.strip() != ""].reset_index(drop=True)
+    # The registry's trade name is masked too: a brand such as "GPA" often heads the subject line.
+    fr["trade_name"] = fr["cd_cvm"].map(cad.set_index("cd_cvm")["trade_name"])
     print("material facts to classify:", len(fr))
     out = {}
     # The second reader codes a random subsample, enough to estimate agreement.
@@ -315,9 +320,10 @@ def cmd_fulltext_sample(a):
     from .llm import signals
 
     docs = pd.read_parquet(DATA / "raw" / "signals_primary_docs.parquet")
-    cnpj = cvm.read_cad().drop_duplicates("cd_cvm").set_index("cd_cvm")["cnpj"]
+    cad = cvm.read_cad().drop_duplicates("cd_cvm").set_index("cd_cvm")
     sample = docs.sample(n=a.n, random_state=2026).copy()
-    sample["cnpj"] = sample["cd_cvm"].map(cnpj).fillna("")
+    sample["cnpj"] = sample["cd_cvm"].map(cad["cnpj"]).fillna("")
+    sample["trade_name"] = sample["cd_cvm"].map(cad["trade_name"])
     cache = DATA / "raw" / "ipe_text"
     with ThreadPoolExecutor(max_workers=3) as ex:
         got = list(ex.map(lambda r: signals.fetch_doc(r.link, cache, str(r.doc_id)), sample.itertuples()))
@@ -531,6 +537,15 @@ def cmd_test(a):
                                     eval_end)
     preds_s.to_parquet(PRIVATE / "test_preds_signals.parquet", index=False)
     experiment.ablation_table(preds, preds_s).to_csv(out / "test_h2_ablation.csv", index=False)
+    # What moves the risk in the registered base models: Cox hazard ratios and XGBoost SHAP.
+    experiment.drivers(train, test, experiment.BASE, fit_end).to_csv(out / "drivers.csv", index=False)
+    # Exploratory, added after the test was opened: the change of audit firm in the past year, a disclosure
+    # predictor the plan named and the first run left out, added to the base in each model.
+    _, preds_a = experiment.run(train, test, experiment.BASE + experiment.EXPLORATORY, list(MODELS), fit_end,
+                                eval_end)
+    experiment.ablation_table(preds, preds_a, primary=None).assign(
+        added="auditor_change", status="exploratory, after the test was opened").to_csv(
+        out / "test_auditor_exploratory.csv", index=False)
     print(res[["model", "auc", "auc_lo", "auc_hi", "c_uno", "ibs"]].round(3).to_string(index=False))
     print("H2 primary:", {k: (round(v, 4) if isinstance(v, float) else v) for k, v in h2.items()})
 

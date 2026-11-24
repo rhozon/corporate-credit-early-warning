@@ -18,6 +18,7 @@ def mask(text: str, names: list[str], cnpj: str | None = None) -> str:
         if digits:
             pattern = "".join(re.escape(d) + r"[.\-/\s]?" for d in digits[:-1]) + re.escape(digits[-1])
             out = re.sub(pattern, TOKEN, out)
+    # Whole words only: a short name such as "Oi" must not cut "apoio", nor "Vale" cut "equivalente".
     for name in sorted({n for n in names if n and n.strip()}, key=len, reverse=True):
-        out = re.sub(re.escape(name.strip()), TOKEN, out, flags=re.IGNORECASE)
+        out = re.sub(r"(?<!\w)" + re.escape(name.strip()) + r"(?!\w)", TOKEN, out, flags=re.IGNORECASE)
     return out

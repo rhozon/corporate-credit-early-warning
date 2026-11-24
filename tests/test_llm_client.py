@@ -186,3 +186,51 @@ def test_mask_hides_names_and_cnpj_in_any_format():
     assert "mericanas" not in out
     assert "00776574" not in out.replace(".", "").replace("/", "").replace("-", "")
     assert out.count("[EMPRESA]") >= 3
+
+
+def test_mask_replaces_whole_words_only():
+    # A short name must not cut other words: "Oi" inside "apoio", "Vale" inside "equivalente".
+    assert mask("Contrato de apoio da Oi com a OI S.A.", ["OI S.A.", "OI"]) == \
+        "Contrato de apoio da [EMPRESA] com a [EMPRESA]"
+    assert mask("Valor equivalente pago pela Vale", ["VALE S.A.", "VALE"]) == "Valor equivalente pago pela [EMPRESA]"
+
+
+def test_cap_holds_when_calls_run_in_parallel(tmp_path):
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    class Slow(Transport):
+        def __call__(self, payload):
+            time.sleep(0.3)
+            return super().__call__(payload)
+
+    # Each call is estimated at 1.5 x (200 tokens x 2e-6) = 6e-4: the cap leaves room for two.
+    t = Slow(cost=6e-4)
+    llm = make(tmp_path, t, cap=1.3e-3, price_in=1e-9)
+
+    def one(i):
+        try:
+            llm.complete("s", f"u{i}")
+            return "ok"
+        except BudgetExceeded:
+            return "refused"
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        out = list(ex.map(one, range(6)))
+    assert out.count("ok") == 2 and len(t.calls) == 2
+    assert json.loads((tmp_path / "ledger.json").read_text())["spent_usd"] <= 1.3e-3
+
+
+def test_a_failed_call_gives_back_its_reservation(tmp_path):
+    def down(payload):
+        raise RuntimeError("provider down")
+
+    llm = make(tmp_path, down, cap=1.3e-3, price_in=1e-9)
+    for i in range(3):
+        with pytest.raises(RuntimeError):
+            llm.complete("s", f"u{i}")
+    t = Transport(cost=6e-4)
+    llm.transport = t
+    llm.complete("s", "a")
+    llm.complete("s", "b")
+    assert len(t.calls) == 2

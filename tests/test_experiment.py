@@ -143,3 +143,20 @@ def test_reliable_set_is_the_one_named_in_the_preregistration_amendment():
     out = experiment.reliable_signals({c: v["kappa"] for c, v in agree.items()})
     assert out == [f"sig_{c}_12m" for c in ("debt_restructuring", "covenant", "missed_payment", "asset_sale_liquidity",
                                             "emergency_capital", "ceo_cfo_change", "rating_downgrade")]
+
+
+def test_drivers_put_the_informative_feature_first():
+    p = synthetic_panel(n_firms=300, seed=5)
+    d = experiment.drivers(p, p, ["x1", "x2"], fit_end=pd.Timestamp("2019-12-31"), fast=True)
+    assert {"feature", "cox_hr", "cox_hr_lo", "cox_hr_hi", "cox_p", "shap_mean_abs"} <= set(d.columns)
+    assert d.iloc[0]["feature"] == "x1"
+    x1, x2 = d.set_index("feature").loc["x1"], d.set_index("feature").loc["x2"]
+    assert x1["cox_hr_lo"] > 1 and x1["shap_mean_abs"] > x2["shap_mean_abs"]
+    assert x2["cox_hr_lo"] < 1 < x2["cox_hr_hi"]
+
+
+def test_exploratory_comparison_has_no_primary_row_and_corrects_every_row():
+    base = fake_preds(seed=1)
+    extra = base.copy()
+    t = experiment.ablation_table(base, extra, primary=None).set_index("model")
+    assert (t["role"] == "exploratory").all() and t["p_holm"].notna().all()

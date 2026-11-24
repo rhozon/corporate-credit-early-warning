@@ -29,6 +29,7 @@ _URLS = {
     "ipe": "DOC/IPE/DADOS/ipe_cia_aberta_{year}.zip",
     "itr": "DOC/ITR/DADOS/itr_cia_aberta_{year}.zip",
     "dfp": "DOC/DFP/DADOS/dfp_cia_aberta_{year}.zip",
+    "fca": "DOC/FCA/DADOS/fca_cia_aberta_{year}.zip",
 }
 
 
@@ -141,6 +142,28 @@ def read_statements(kind: str, years, table: str, raw_dir: Path = RAW) -> pd.Dat
     st = pd.concat(frames, ignore_index=True)
     cols = ["cd_cvm", "dt_refer", "version", "consolidated", "code", "value", "dt_receb"]
     return st[cols + [c for c in st.columns if c not in cols]]
+
+
+def read_fca(years, raw_dir: Path = RAW) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Registration forms (FCA): each version's receipt date, and the auditors it lists with their dates."""
+    docs, auds = [], []
+    for y in years:
+        z = zipfile.ZipFile(download("fca", y, raw_dir))
+        d = _csv(z.open(f"fca_cia_aberta_{y}.csv"))
+        docs.append(pd.DataFrame({"cd_cvm": d["CD_CVM"].astype(int), "id_doc": d["ID_DOC"].astype(int),
+                                  "dt_receb": pd.to_datetime(d["DT_RECEB"], errors="coerce")}))
+        name = f"fca_cia_aberta_auditor_{y}.csv"
+        if name in z.namelist():
+            a = _csv(z.open(name))
+            auds.append(pd.DataFrame({
+                "id_doc": a["ID_Documento"].astype(int), "auditor_cnpj": a["CPF_CNPJ_Auditor"].fillna(""),
+                "start": pd.to_datetime(a["Data_Inicio_Atuacao_Auditor"], errors="coerce"),
+                "end": pd.to_datetime(a["Data_Fim_Atuacao_Auditor"], errors="coerce")}))
+    docs = pd.concat(docs, ignore_index=True).drop_duplicates() if docs else pd.DataFrame(
+        columns=["cd_cvm", "id_doc", "dt_receb"])
+    auds = pd.concat(auds, ignore_index=True) if auds else pd.DataFrame(
+        columns=["id_doc", "auditor_cnpj", "start", "end"])
+    return docs.reset_index(drop=True), auds
 
 
 def read_parecer(kind: str, years, raw_dir: Path = RAW) -> pd.DataFrame:

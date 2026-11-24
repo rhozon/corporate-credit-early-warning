@@ -221,3 +221,26 @@ def test_fulltext_checks_count_own_recovery_flags_inside_open_episodes():
     ch = signals.fulltext_checks(full, ev)
     assert ch["own_recovery_full_text"] == 2 and ch["own_recovery_full_text_inside_open_episode"] == 1
     assert ch["debt_restructuring_full_text"] == 1 and ch["debt_restructuring_full_text_inside_open_episode"] == 0
+
+
+def test_classify_masks_the_trade_name_too(tmp_path):
+    t = Transport({"items": [{"i": 1, "labels": ["none"]}]})
+    d = pd.DataFrame({"cd_cvm": [1], "name": ["COMPANHIA BRASILEIRA DE DISTRIBUICAO"], "trade_name": ["GPA"],
+                      "cnpj": ["47.508.411/0001-56"], "delivered": pd.to_datetime(["2020-01-10"]),
+                      "subject": ["GPA conclui venda de lojas"], "link": ["x"]})
+    signals.classify_subjects(d, LLM("m", cache_dir=tmp_path, transport=t))
+    sent = t.calls[0]["messages"][1]["content"]
+    assert "GPA" not in sent and "[EMPRESA] conclui venda" in sent
+
+
+def test_full_text_masks_the_trade_name_too(tmp_path):
+    t = Transport({"labels": ["none"]})
+    d = docs(1).assign(trade_name=["ACMEMART"])
+    signals.classify_fulltext(d, {0: "A rede ACMEMART fecha lojas."}, LLM("vendor/m", cache_dir=tmp_path, transport=t))
+    assert "ACMEMART" not in t.calls[0]["messages"][1]["content"]
+
+
+def test_firm_names_skip_generic_and_missing_trade_names():
+    assert signals.firm_names("ACME S.A.", None) == signals.name_variants("ACME S.A.")
+    assert "BRASIL" not in signals.firm_names("ACME S.A.", "BRASIL")
+    assert "GPA" in signals.firm_names("COMPANHIA BRASILEIRA DE DISTRIBUICAO", "GPA")
