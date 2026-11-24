@@ -184,6 +184,9 @@ class LLM:
         self.cache_dir = Path(cache_dir)
         self.transport = transport or (_google if model.startswith("google/") else _http)
         self.price_in, self.price_out = price_in, price_out
+        # Estimates of calls in flight, held against the cap until each call's real cost is charged, so
+        # parallel workers cannot all pass the check before any of them has paid.
+        self._reserved = 0.0
 
     # ledger -------------------------------------------------------------
     @property
@@ -218,9 +221,18 @@ class LLM:
             content = json.loads(path.read_text(encoding="utf-8"))["content"]
             return _parse_json(content) if schema is not None else content
 
+        est = self._estimate(system, user)
         with _lock_for(self._ledger_path):
-            if self.ledger()["spent_usd"] + self._estimate(system, user) > self.cap:
+            if self.ledger()["spent_usd"] + self._reserved + est > self.cap:
                 raise BudgetExceeded(f"cap of US$ {self.cap:.2f} would be exceeded")
+            self._reserved += est
+        try:
+            return self._call(system, user, schema, path, est)
+        finally:
+            with _lock_for(self._ledger_path):
+                self._reserved -= est
+
+    def _call(self, system: str, user: str, schema, path: Path, est: float):
         payload = {"model": self.model, "temperature": 0, "max_tokens": self.max_tokens,
                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
                    "usage": {"include": True}}
