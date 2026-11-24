@@ -93,3 +93,30 @@ result.
   (`features.point_in_time`).
 - Added beside DeLong, not replacing it: a paired bootstrap that resamples firms whole, for every
   AUC comparison, since a firm's quarters are not independent.
+
+## Version 2, 2026-11-24 (after the test period was opened)
+
+A second pass on limits that the corrected version declared. Again, the hypotheses, models, primary
+test, split, metrics and thresholds above are unchanged, and no change was chosen by looking at a
+test result.
+
+- Masking. Names were matched anywhere, even inside other words, so a short name cut them (the name
+  "Oi" turned "apoio" into "ap[EMPRESA]o"), and trade names that differ from the registered name,
+  such as "GPA", reached the model. Names are now masked as whole words, and the registry's trade
+  name is masked too (`llm.mask.mask`, `llm.signals.firm_names`). The masked text of 1,055 of the
+  30,990 subjects changed; their batches were read again, and every test that uses the signals was
+  run again.
+- Spending cap. Calls running in parallel could all pass the check before any of them was charged.
+  Each call's estimate is now held against the cap while it runs (`llm.client.LLM.complete`). The
+  models that ran in parallel are priced at zero, so no result depends on this.
+- Added, outside the registered analyses: `results/drivers.csv`, the Cox hazard ratios and XGBoost
+  SHAP contributions that the plan named for interpretation; and the change of audit firm in the
+  past twelve months (`features.auditor_changes`, read from the registration forms), which the plan
+  listed as a disclosure predictor and the first run left out. It is not added to the registered
+  base. It enters only an exploratory comparison of each model with and without it
+  (`results/test_auditor_exploratory.csv`).
+- Secondary H2 test on reliable categories. Read again with the new masking, the second reader's
+  agreement on emergency capital moved from 0.601 to 0.590, below the 0.60 threshold. The test
+  keeps the seven categories the amendment of 2026-11-21 named (`experiment.RELIABLE_REGISTERED`),
+  since the set was fixed before the test was opened; `results/test_h2_reliable.json` lists the
+  categories now below the threshold.

@@ -77,9 +77,16 @@ def load() -> dict:
     n["test_h2"] = _json("results/test_h2.json")
     n["test_h2_reliable"] = _json("results/test_h2_reliable.json")
     n["test_h2_exploratory"] = _json("results/test_h2_exploratory.json")
-    for name in ("test_h2_ablation", "test_robust_narrow", "test_robust_rolling"):
+    for name in ("test_h2_ablation", "test_robust_narrow", "test_robust_rolling", "drivers",
+                 "test_auditor_exploratory"):
         f = ROOT / "results" / f"{name}.csv"
         n[name] = pd.read_csv(f) if f.exists() else None
+    a = pd.read_parquet(ROOT / "data" / "panel.parquet")
+    if "auditor_change" in a:
+        n["auditor_rate"] = float(a["auditor_change"].mean())
+        n["auditor_rate_y12"] = float(a.loc[a["y12"] == 1, "auditor_change"].mean())
+    else:
+        n["auditor_rate"] = n["auditor_rate_y12"] = None
     n["claims"] = _claims(n)
     return n
 
@@ -122,6 +129,19 @@ CATEGORY_NAMES = {"debt_restructuring": "Debt restructuring", "covenant": "Coven
                   "ceo_cfo_change": "Executive change", "rating_downgrade": "Rating downgrade",
                   "own_recovery": "Own recovery", "subsidiary_recovery": "Subsidiary recovery",
                   "sanction": "Sanction"}
+
+
+PREDICTOR_NAMES = {
+    "wc_ta": "Working capital / assets", "re_ta": "Retained earnings / assets", "ebit_ta": "EBIT / assets",
+    "eq_tl": "Equity / liabilities", "lev": "Leverage", "curr": "Current ratio", "cash_ta": "Cash / assets",
+    "int_cov": "Interest coverage", "margin": "Net margin", "sales_g": "Revenue growth",
+    "log_size_real": "Size (real assets, log)", "neg_eq": "Negative equity",
+    "loss_q4": "Quarter-ends with a twelve-month loss (last four)", "filing_delay_days": "Filing delay",
+    "n_restatements_4q": "Restatements (last four quarters)", "info_age_days": "Age of the latest filing",
+    "gc_flag": "Going-concern flag", "prior_event": "Previous recovery", "selic": "Selic rate",
+    "ipca12": "Inflation (12 months)", "ibc_yoy": "Activity index growth", "unemp": "Unemployment",
+    "pj_default": "Corporate loan default rate", "spread": "Corporate lending spread",
+    "auditor_change": "Change of audit firm (12 months)"}
 
 
 WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]

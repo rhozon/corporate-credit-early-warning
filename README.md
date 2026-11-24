@@ -21,6 +21,13 @@ tested by ablation, with the primary test written down before the test period wa
 > is a much stronger benchmark, the models now overestimate the 36-month rate, and the
 > exploratory signal gain is gone.
 
+> **Version 2 (2026-11-24).** Company names are now masked as whole words (a short name such as
+> "Oi" used to cut "apoio"), and the registry's trade name is masked too. The 1,055 subjects whose
+> masked text changed were read again and every result that uses the signals was run again; no
+> conclusion changed. The version adds `results/drivers.csv` (Cox hazard ratios and XGBoost SHAP)
+> and an exploratory comparison with the change of audit firm, holds each parallel call's cost
+> estimate against the spending cap, and is recorded in [PREREGISTRATION.md](PREREGISTRATION.md).
+
 The repository also holds the systematic literature review (PRISMA 2020) and the paper.
 
 ## What is and is not published
@@ -68,6 +75,9 @@ file, such as the site pages, before release.
   restatement only from its own delivery date. Rows whose latest statement is older than 550
   days are dropped.
 - **Auditor's report**: a text rule flags the going-concern paragraph.
+- **Registration forms (FCA)**: the audit firm each form lists, for the change of audit firm in
+  the past twelve months. It is not a registered predictor and enters only an exploratory
+  comparison.
 - **Event filings (IPE)**: material facts, and the category used by companies in recovery.
 - **Macro (SGS)**: Selic, IPCA, IBC-Br, unemployment, corporate non-performing loans, lending
   spread, each lagged by its publication delay.
@@ -105,7 +115,7 @@ correction.
 Material-fact subjects are classified into eleven distress categories (debt restructuring,
 covenant, missed payment, asset sale for liquidity, emergency capital, going concern, CEO or
 CFO change, rating downgrade, own recovery, subsidiary recovery, sanction) by Gemma 4 26B, with
-the company's names and tax number masked. A second model (Gemma 4 31B) reads a 3,000-document
+the company's registered and trade names (as whole words) and tax number masked. A second model (Gemma 4 31B) reads a 3,000-document
 subsample for agreement, and 200 documents are read in full to measure what the subject line
 misses. The company's own recovery announcements are
 never a predictor.
@@ -152,8 +162,15 @@ Out-of-time test from 2020, 13,121 firm-quarters, 133 followed by a filing withi
   (2.87%) and XGBoost PD underestimates. Cox has the lowest 36-month Brier score.
 - H2, pre-registered: no gain from the signals (AUC 0.798 with, 0.816 without; one-sided
   DeLong p = 0.99). Winsorising at the 99th percentile had turned the five rarest signal
-  counts into zeros; an exploratory rerun that keeps them gives 0.818 (p = 0.37; 0.47 with
+  counts into zeros; an exploratory rerun that keeps them gives 0.819 (p = 0.35; 0.45 with
   firms resampled), no gain either (`results/test_h2_exploratory.json`).
+- Drivers (`results/drivers.csv`): in the XGBoost PD the largest SHAP contributions come from
+  interest coverage, working capital over assets and quarter-ends with a twelve-month loss; in
+  the Cox model, losses, the going-concern flag, negative equity and filing delay raise the
+  hazard, and working capital and cash lower it.
+- Change of audit firm, exploratory: added to the base set, it moves the AUC by between -0.056
+  and 0.033 across the models, and no change is significant after Holm's correction
+  (`results/test_auditor_exploratory.csv`).
 
 ## License
 

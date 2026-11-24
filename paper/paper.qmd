@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd()))
 sys.path.insert(0, str(Path.cwd().parent))
-from paper_numbers import CATEGORY_NAMES, MODEL_NAMES, N, event_date, fmt, spell, table
+from paper_numbers import CATEGORY_NAMES, MODEL_NAMES, N, PREDICTOR_NAMES, event_date, fmt, spell, table
 ```
 
 # Abstract {.unnumbered}
@@ -89,6 +89,24 @@ stronger benchmark (AUC 0.816, against 0.758 before), and no model's edge over i
 firm-resampled test;
 most models now overestimate the long-horizon rate rather than underestimate it; and the gain the
 exploratory signal test suggested (an AUC of 0.783) does not appear in the corrected run.
+
+```{python}
+#| output: asis
+if N["test_h2"] and N["test_h2_reliable"]:
+    print(
+        f"**Version 2 (24 November 2026).** A second pass addressed limits that the corrected version declared. "
+        f"Company names were masked even inside other words, so a short name cut them (the name Oi inside "
+        f"\"apoio\"), and trade names that differ from the registered name reached the model. Names are now "
+        f"masked as whole words, and the trade name in the registry is masked too. The masked text of 1,055 of "
+        f"the 30,990 subjects changed; their batches were read again and 148 documents changed labels. Every "
+        f"result that uses the signals was run again, and no conclusion changed: the pre-registered test gives "
+        f"an AUC of {fmt(N['test_h2']['auc_signals'], 3)} with the signals against {fmt(N['test_h2']['auc_base'], 3)} "
+        f"without. Read again, the second reader's agreement on emergency capital fell from 0.601 to 0.590, just "
+        f"below the threshold of the amendment; the secondary test keeps the seven categories that the amendment "
+        f"named. This version also adds the interpretation the plan named (@sec-drivers) and the change of audit "
+        f"firm, as an exploratory comparison (@sec-auditor). Results that do not use the signals did not change."
+    )
+```
 
 # Introduction
 
@@ -374,7 +392,10 @@ accepts only a statement of material uncertainty about the filer, such as the se
 opens under that heading; the conditional sentence about the auditor's responsibilities, present
 in every opinion since the 2016 reports, does not set it. Fiscal years that end in a month other
 than December are handled when flows are summed over twelve months. The six
-macroeconomic series complete the base set.
+macroeconomic series complete the base set. The change of audit firm in the past twelve months,
+read from the registration forms (FCA) as they were received, is not in the base set: the first
+run left it out, and it was added after the test period was opened, so it enters only an
+exploratory comparison (@sec-auditor).
 
 ## Models
 
@@ -412,8 +433,9 @@ print(
     f"going-concern doubt, change of chief executive or chief financial officer, rating downgrade, the "
     f"company's own recovery, a subsidiary's recovery, and sanction. The company's registered name and its "
     f"tax number are masked before the text reaches the model, so that the model's memory of what later "
-    f"happened to a known company is less likely to leak into the label; trade names that differ from the "
-    f"registered name are not masked. Announcements of the company's own "
+    f"happened to a known company is less likely to leak into the label. Names are matched as whole words, "
+    f"and the trade name in the registry (such as GPA for Companhia Brasileira de Distribuição) is masked "
+    f"too. Announcements of the company's own "
     f"recovery are kept for auditing the event base but never used as a predictor. A document enters the "
     f"panel only from its delivery date; the features are counts of each category in the 4 and 12 months "
     f"before the quarter. {fmt(N.get('signal_any'))} documents carry at least one signal."
@@ -572,6 +594,39 @@ if H3 is not None:
     print(table(pd.DataFrame(rows), 3))
 ```
 
+## What drives the risk {#sec-drivers}
+
+```{python}
+#| output: asis
+DR = N["drivers"]
+if DR is not None:
+    dn = lambda f: PREDICTOR_NAMES.get(f, f)
+    top = [dn(f) for f in DR["feature"].head(3)]
+    sig = DR[(DR["cox_hr_lo"] > 1) | (DR["cox_hr_hi"] < 1)].sort_values("cox_p")
+    up = [dn(f) for f in sig.loc[sig["cox_hr"] > 1, "feature"]]
+    down = [dn(f) for f in sig.loc[sig["cox_hr"] < 1, "feature"]]
+    say = lambda xs: ", ".join(x.lower() for x in xs[:-1]) + (" and " if len(xs) > 1 else "") + xs[-1].lower() if xs else ""
+    print(f"Two readings of the fitted base models show what moves the risk. In the XGBoost PD, the largest mean "
+          f"contributions on the test rows (SHAP values, in log-odds) come from {say(top)}. In the Cox model, "
+          f"{spell(len(sig))} of the {spell(DR['cox_hr'].notna().sum())} predictors have a hazard ratio whose 95% "
+          f"interval excludes one"
+          + (f": higher risk with {say(up)}" if up else "")
+          + (f"{';' if up else ':'} lower risk with {say(down)}" if down else "")
+          + ". Hazard ratios are per standard deviation of each predictor after winsorising, from a penalised "
+          "fit, so they are shrunk towards one and their intervals are approximate (@tbl-drivers).")
+    d = DR.head(10)
+    t = pd.DataFrame({"Predictor": [dn(f) for f in d["feature"]], "SHAP, mean absolute": d["shap_mean_abs"],
+                      "Cox hazard ratio": d["cox_hr"],
+                      "95% interval": [f"{fmt(a, 2)} to {fmt(b, 2)}" if a == a else "" for a, b in
+                                       zip(d["cox_hr_lo"], d["cox_hr_hi"])]})
+    print("\n\n: The ten predictors with the largest mean absolute SHAP contribution to the XGBoost PD on the "
+          "test rows, with the Cox hazard ratio per standard deviation. Both models are fitted on the training "
+          "years, as in the test; the full list is in results/drivers.csv. {#tbl-drivers}\n")
+    print(table(t))
+else:
+    print(fmt(None))
+```
+
 ## Language-model signals (H2)
 
 ```{python}
@@ -588,8 +643,14 @@ if K:
           f"least {fmt(min(v['agreement'] for v in K.values()), 1, pct=True)} in every category, because most "
           f"subjects carry no signal at all, so kappa is the informative figure. The first reader flags more "
           f"often than the second in {fmt(n_more)} of the {fmt(len(K))} categories. Kappa falls below 0.60 in "
-          f"{fmt(len(low))}, each with many more flags from the first reader: {flags}. The secondary H2 test "
-          f"leaves these categories out.")
+          f"{fmt(len(low))}, each with many more flags from the first reader: {flags}.")
+    _R = N["test_h2_reliable"] or {}
+    _kept = [CATEGORY_NAMES[c[4:-4]].lower() for c in _R.get("now_below_threshold", [])]
+    _out = [CATEGORY_NAMES[c].lower() for c in low if f"sig_{c}_12m" not in _R.get("signals", [])
+            and c != "own_recovery"]
+    print(f" The secondary H2 test leaves out {', '.join(_out[:-1]) + ' and ' + _out[-1] if len(_out) > 1 else ''.join(_out)}"
+          + (f"; {' and '.join(_kept)} fell below the threshold only when the subjects were read again for the "
+             f"second version, and stays in, as the amendment named it" if _kept else "") + ".")
 L = N["subject_loss"]
 if L:
     a = L["loss"]["any"]
@@ -694,6 +755,29 @@ if RR is not None:
     print(table(piv.reset_index(drop=True)))
 ```
 
+## Change of audit firm (exploratory) {#sec-auditor}
+
+```{python}
+#| output: asis
+AU = N["test_auditor_exploratory"]
+if AU is not None:
+    au = AU[AU["model"] != "altman"]  # the Altman score has fixed inputs
+    lg = AU.set_index("model").loc["logit_hazard"]
+    k = int((au["p_holm"] < 0.05).sum())
+    print(f"The plan listed the change of audit firm among the disclosure predictors, and the first run left it "
+          f"out. It was added after the test period was opened, so this comparison is exploratory. The flag is set "
+          f"when the registration forms received by a date show a new audit firm in the twelve months before it; "
+          f"it is on in {fmt(N['auditor_rate'], 1, pct=True)} of the panel's firm-quarters and in "
+          f"{fmt(N['auditor_rate_y12'], 1, pct=True)} of those followed by a filing within twelve months. Added to "
+          f"the base set, it changes the AUC of the 12-month PD by between {fmt(au['auc_diff'].min(), 3)} and "
+          f"{fmt(au['auc_diff'].max(), 3)} across the {spell(len(au))} models that take it (hazard logit: "
+          f"{fmt(lg['auc_base'], 3)} to {fmt(lg['auc_signals'], 3)}), and "
+          + ("none of the changes is" if k == 0 else f"{spell(k)} of the changes {'is' if k == 1 else 'are'}")
+          + " significant after Holm's correction across all of them.")
+else:
+    print(fmt(None))
+```
+
 # Agentic credit memo
 
 The product layer turns the models into a credit memo for a committee. An orchestrator calls
@@ -765,11 +849,13 @@ done by language models; their agreement is reported, but no human screened the 
 studies without an open-access text enter only through their abstracts. The signals are read from
 subject lines; the full-text sample measures what that costs. The registered preprocessing erased
 the rarest signal counts, so the test of H2 that keeps them is exploratory, whatever it shows. The memos on past cases name firms whose stories are public, and the model
-that writes them may know how those stories ended. Trade names that differ from a company's
-registered name are not masked in the signal prompts. The corrections listed at the top of the
-paper were made after the test period was opened; they fix code that did not do what the
-registration describes, and the hypotheses, models and primary test did not change, but a reader
-should weigh results obtained after an opening accordingly.
+that writes them may know how those stories ended. Masking hides a company's own names, not
+everything that identifies it: a subject that names a plant, a brand outside the registry or a
+controlling shareholder can still tell the model which company it is. The hazard ratios of the
+drivers table come from a penalised fit, so they are shrunk towards one. The corrections and the
+second version listed at the top of the paper were made after the test period was opened; they
+fix code that did not do what the registration describes, and the hypotheses, models and primary
+test did not change, but a reader should weigh results obtained after an opening accordingly.
 
 # Conclusion
 
