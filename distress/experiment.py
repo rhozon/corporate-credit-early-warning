@@ -66,6 +66,12 @@ SIGNALS = [f"sig_{c}_12m" for c in FEATURE_CATEGORIES] + ["sig_any_12m"]
 PRIMARY_MODEL = "logit_hazard"
 
 
+# The secondary H2 test's treated arm, as the amendment of 2026-11-21 named it before the test was opened.
+RELIABLE_REGISTERED = [f"sig_{c}_12m" for c in ("debt_restructuring", "covenant", "missed_payment",
+                                                "asset_sale_liquidity", "emergency_capital", "ceo_cfo_change",
+                                                "rating_downgrade")]
+
+
 def reliable_signals(kappa: dict, threshold: float = 0.6) -> list[str]:
     """Signal columns of the categories on which the two language models agree (kappa at or above the
     threshold). The any-signal count is left out, since it mixes in the categories that are dropped."""

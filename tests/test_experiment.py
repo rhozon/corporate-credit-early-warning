@@ -136,13 +136,11 @@ def test_reliable_signals_keep_categories_the_two_readers_agree_on():
 
 
 def test_reliable_set_is_the_one_named_in_the_preregistration_amendment():
-    import json
-    from pathlib import Path
-
-    agree = json.loads((Path(__file__).parents[1] / "results" / "llm_agreement.json").read_text())
-    out = experiment.reliable_signals({c: v["kappa"] for c, v in agree.items()})
-    assert out == [f"sig_{c}_12m" for c in ("debt_restructuring", "covenant", "missed_payment", "asset_sale_liquidity",
-                                            "emergency_capital", "ceo_cfo_change", "rating_downgrade")]
+    # The amendment named seven categories before the test was opened. The test keeps them even when a later
+    # rerun of the agreement moves a category across the threshold (emergency capital, in version 2).
+    assert experiment.RELIABLE_REGISTERED == [
+        f"sig_{c}_12m" for c in ("debt_restructuring", "covenant", "missed_payment", "asset_sale_liquidity",
+                                 "emergency_capital", "ceo_cfo_change", "rating_downgrade")]
 
 
 def test_drivers_put_the_informative_feature_first():

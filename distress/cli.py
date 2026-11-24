@@ -520,10 +520,14 @@ def cmd_test(a):
     h2 = experiment.h2_test(train, test, experiment.BASE, experiment.SIGNALS, fit_end, eval_end)
     (out / "test_h2.json").write_text(json.dumps(h2, indent=2, default=float))
     # Secondary: only the categories the two readers agree on (amendment to the pre-registration).
+    # The set stays the one the amendment named, even if a rerun of the agreement moves a category across 0.60.
     agree = json.loads((out / "llm_agreement.json").read_text())
-    reliable = experiment.reliable_signals({c: v["kappa"] for c, v in agree.items()})
+    reliable = experiment.RELIABLE_REGISTERED
+    by_kappa = experiment.reliable_signals({c: v["kappa"] for c, v in agree.items()})
     h2r = experiment.h2_test(train, test, experiment.BASE, reliable, fit_end, eval_end)
-    (out / "test_h2_reliable.json").write_text(json.dumps(h2r | {"signals": reliable}, indent=2, default=float))
+    (out / "test_h2_reliable.json").write_text(json.dumps(
+        h2r | {"signals": reliable, "now_below_threshold": [s for s in reliable if s not in by_kappa]},
+        indent=2, default=float))
     # Exploratory, added after the test was opened: winsorising at the 99th percentile turned the rarest signal
     # counts into constant zeros, so the registered tests never saw them. The same tests with the tails kept:
     flat = [s for s in experiment.SIGNALS if train[s].quantile(0.01) == train[s].quantile(0.99)]
