@@ -1,19 +1,19 @@
 {
   "documents": 30990,
-  "any_signal": 7181,
-  "any_feature_signal": 6532,
+  "any_signal": 7158,
+  "any_feature_signal": 6514,
   "by_category": {
-    "debt_restructuring": 793,
-    "covenant": 73,
+    "debt_restructuring": 798,
+    "covenant": 75,
     "missed_payment": 46,
-    "asset_sale_liquidity": 2070,
-    "emergency_capital": 917,
+    "asset_sale_liquidity": 2051,
+    "emergency_capital": 920,
     "going_concern": 99,
-    "ceo_cfo_change": 1345,
+    "ceo_cfo_change": 1344,
     "rating_downgrade": 93,
-    "own_recovery": 779,
-    "subsidiary_recovery": 96,
-    "sanction": 1083
+    "own_recovery": 773,
+    "subsidiary_recovery": 89,
+    "sanction": 1070
   },
   "by_year": {
     "2010": 1058,

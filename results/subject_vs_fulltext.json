@@ -14,7 +14,7 @@
     "rating_downgrade": NaN,
     "own_recovery": 0.23643410852713176,
     "subsidiary_recovery": 0.0,
-    "sanction": 0.20427005193306402
+    "sanction": 0.4316214656664743
   },
   "loss": {
     "debt_restructuring": {
@@ -72,7 +72,7 @@
       "recall_of_subject": 0.14285714285714285
     },
     "subsidiary_recovery": {
-      "full_text": 2,
+      "full_text": 3,
       "subject": 0,
       "both": 0,
       "recall_of_subject": 0.0
@@ -80,14 +80,14 @@
     "sanction": {
       "full_text": 5,
       "subject": 4,
-      "both": 1,
-      "recall_of_subject": 0.2
+      "both": 2,
+      "recall_of_subject": 0.4
     },
     "any": {
       "full_text": 67,
       "subject": 47,
-      "both": 42,
-      "recall_of_subject": 0.6268656716417911
+      "both": 43,
+      "recall_of_subject": 0.6417910447761194
     }
   },
   "checks": {

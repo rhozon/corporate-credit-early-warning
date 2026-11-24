@@ -3,13 +3,13 @@
   "n": 13121,
   "events": 133,
   "auc_base": 0.8156325908704621,
-  "auc_signals": 0.7905296039606252,
-  "auc_diff": -0.025102986909836922,
-  "z": -3.493491024777084,
-  "p_one_sided": 0.999761625495288,
-  "p_cluster_one_sided": 0.983016983016983,
-  "diff_lo": -0.04985488790068087,
-  "diff_hi": -0.0021997456584735594,
+  "auc_signals": 0.7909718861366535,
+  "auc_diff": -0.024660704733808658,
+  "z": -3.4518769556358926,
+  "p_one_sided": 0.9997216492338223,
+  "p_cluster_one_sided": 0.9820179820179821,
+  "diff_lo": -0.04934256034901822,
+  "diff_hi": -0.001954330038111867,
   "signals": [
     "sig_debt_restructuring_12m",
     "sig_covenant_12m",
@@ -19,5 +19,8 @@
     "sig_ceo_cfo_change_12m",
     "sig_rating_downgrade_12m"
   ],
-  "keep_tails": []
+  "keep_tails": [],
+  "now_below_threshold": [
+    "sig_emergency_capital_12m"
+  ]
 }
