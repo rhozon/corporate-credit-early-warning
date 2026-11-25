@@ -628,6 +628,12 @@ def cmd_memos(a):
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def cmd_site(a):
+    from .site import export_site_json
+    p = export_site_json(a.path)
+    print(f"{p}: {p.stat().st_size / 1024:.0f} KB")
+
+
 def main(argv=None):
     PRIVATE.mkdir(parents=True, exist_ok=True)
     p = argparse.ArgumentParser(prog="distress")
@@ -693,6 +699,9 @@ def main(argv=None):
     me = sub.add_parser("memos")
     me.add_argument("--data-end", default="2026-11-20")
     me.set_defaults(fn=cmd_memos)
+    si = sub.add_parser("site")
+    si.add_argument("path")
+    si.set_defaults(fn=cmd_site)
     a = p.parse_args(argv)
     a.fn(a)
 

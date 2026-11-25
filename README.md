@@ -128,6 +128,8 @@ critic checks every number and date in the draft against the tool outputs and bl
 if one has no source.
 `python -m distress.cli memos` writes memos on four past cases (Americanas, Ambipar, Raízen,
 Casas Bahia), each as of twelve months before the filing, to `results/memos/`.
+`python -m distress.cli site data.json` writes the data behind the interactive page: aggregate
+test results and these four memos only.
 
 ## Systematic review
 
